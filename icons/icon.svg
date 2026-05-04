@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#5c3d2e"/>
+  <!-- Book shape -->
+  <rect x="110" y="100" width="130" height="312" rx="12" fill="#fdf8f0"/>
+  <rect x="272" y="100" width="130" height="312" rx="12" fill="#f0e8d8"/>
+  <!-- Spine -->
+  <rect x="232" y="100" width="48" height="312" rx="4" fill="#8b6347"/>
+  <!-- Lines on left page -->
+  <rect x="130" y="148" width="90" height="10" rx="5" fill="#c8b89a"/>
+  <rect x="130" y="172" width="90" height="10" rx="5" fill="#c8b89a"/>
+  <rect x="130" y="196" width="70" height="10" rx="5" fill="#c8b89a"/>
+  <rect x="130" y="232" width="90" height="10" rx="5" fill="#c8b89a"/>
+  <rect x="130" y="256" width="90" height="10" rx="5" fill="#c8b89a"/>
+  <rect x="130" y="280" width="60" height="10" rx="5" fill="#c8b89a"/>
+  <!-- Lines on right page -->
+  <rect x="292" y="148" width="90" height="10" rx="5" fill="#b8a888"/>
+  <rect x="292" y="172" width="90" height="10" rx="5" fill="#b8a888"/>
+  <rect x="292" y="196" width="70" height="10" rx="5" fill="#b8a888"/>
+  <rect x="292" y="232" width="90" height="10" rx="5" fill="#b8a888"/>
+  <rect x="292" y="256" width="90" height="10" rx="5" fill="#b8a888"/>
+  <rect x="292" y="280" width="60" height="10" rx="5" fill="#b8a888"/>
+  <!-- Focus dot -->
+  <circle cx="256" cy="380" r="18" fill="#e8a020"/>
+</svg>
