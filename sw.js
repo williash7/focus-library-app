@@ -1,8 +1,9 @@
-const CACHE = 'focus-library-v9';
+const CACHE = 'focus-library-v10';
 
+// Pre-cache index.html using a relative URL so it resolves correctly on any
+// base path (localhost OR GitHub Pages /focus-library-app/).
 self.addEventListener('install', e => {
-  // Skip precaching — runtime caching in fetch handler handles everything.
-  // addAll fails if any asset 404s (e.g. on GitHub Pages subdirectory), so we avoid it.
+  e.waitUntil(caches.open(CACHE).then(c => c.add('./index.html')));
   self.skipWaiting();
 });
 
@@ -17,16 +18,30 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+
+  // Navigation requests (opening the PWA, page load):
+  // network-first so content stays fresh; fall back to cached index.html offline.
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+          return res;
+        })
+        .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  // All other assets (JS, CSS, images, fonts): cache-first.
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
       return fetch(e.request).then(res => {
-        if (res.ok && e.request.url.startsWith(self.location.origin)) {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
+        if (res.ok && e.request.url.startsWith(self.location.origin))
+          caches.open(CACHE).then(c => c.put(e.request, res.clone()));
         return res;
-      }).catch(() => caches.match(e.request.url.includes('/index.html') ? e.request : new Request('index.html')));
+      });
     })
   );
 });
