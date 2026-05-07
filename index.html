@@ -1252,7 +1252,12 @@ async function initPdf(data) {
   try {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     const ab = data instanceof ArrayBuffer ? data : await data.arrayBuffer();
-    S.pdfDoc = await pdfjsLib.getDocument({ data: ab.slice(0), standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/' }).promise;
+    S.pdfDoc = await pdfjsLib.getDocument({
+      data: ab.slice(0),
+      cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+      cMapPacked: true,
+      standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/',
+    }).promise;
     S.currentBook.totalPages = S.pdfDoc.numPages;
     await dbPut('books', S.currentBook);
     const idx = S.books.findIndex(b=>b.id===S.currentBook.id);
