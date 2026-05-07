@@ -1389,12 +1389,20 @@ async function setupPdfContinuous() {
     rm.addEventListener('scroll', onPdfScroll, { passive: true });
   }
 
-  // Restore saved page (no animation on initial load)
+  // Restore saved position
+  const savedFrac = S.currentBook?.pdfScrollFrac || 0;
   const savedPage = S.currentPage || 1;
-  if (savedPage > 1) {
+  if (savedFrac > 0) {
+    // Pre-render the page that should be visible at the saved position
+    const targetWrap = container.querySelector(`[data-page="${savedPage}"]`);
+    if (targetWrap) await renderPageIntoWrapper(savedPage, targetWrap);
+    // scrollHeight is computed synchronously after DOM access — restore exact position
+    if (rm && rm.scrollHeight > rm.clientHeight) {
+      rm.scrollTop = Math.round(savedFrac * (rm.scrollHeight - rm.clientHeight));
+    }
+  } else if (savedPage > 1) {
     const targetWrap = container.querySelector(`[data-page="${savedPage}"]`);
     if (targetWrap) {
-      // Pre-render target and scroll without animation
       await renderPageIntoWrapper(savedPage, targetWrap);
       targetWrap.scrollIntoView({ block: 'start' });
     }
@@ -1419,9 +1427,6 @@ function onPdfScroll() {
 
   if (pageNum !== S.currentPage) {
     S.currentPage = pageNum;
-    S.currentBook.currentPage = pageNum;
-    clearTimeout(S._pdfSaveTimer);
-    S._pdfSaveTimer = setTimeout(() => dbPut('books', S.currentBook), 1000);
     const pd = $id('pageDisplay');
     if (pd) pd.textContent = `${pageNum} / ${S.pdfDoc.numPages}`;
     const prev = $id('prevBtn'), next = $id('nextBtn');
@@ -1429,10 +1434,17 @@ function onPdfScroll() {
     if (next) next.disabled = pageNum >= S.pdfDoc.numPages;
   }
 
-  // Scroll-based progress
+  // Scroll-based progress + save exact position
   const scrollFrac = rm.scrollHeight > rm.clientHeight ? rm.scrollTop / (rm.scrollHeight - rm.clientHeight) : 0;
   const pi = $id('pageIndicator');
   if (pi) pi.textContent = Math.round(scrollFrac * 100) + '%';
+
+  if (S.currentBook) {
+    S.currentBook.currentPage = pageNum;
+    S.currentBook.pdfScrollFrac = scrollFrac;
+    clearTimeout(S._pdfSaveTimer);
+    S._pdfSaveTimer = setTimeout(() => dbPut('books', S.currentBook), 1000);
+  }
 }
 
 // ═══ EPUB READER ═══
@@ -1506,13 +1518,15 @@ async function initEpub(data) {
 
     await loadAllEpubContent();
 
-    // Restore scroll position
+    // Restore scroll position — double rAF ensures layout is complete before scrolling
     const savedPct = S.currentBook.epubScrollPct || 0;
     if (savedPct > 0) {
-      setTimeout(() => {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
         const el = $id('readerMain');
-        if (el) el.scrollTop = (el.scrollHeight - el.clientHeight) * savedPct / 100;
-      }, 200);
+        if (el && el.scrollHeight > el.clientHeight) {
+          el.scrollTop = Math.round((el.scrollHeight - el.clientHeight) * savedPct / 100);
+        }
+      }));
     }
 
     setupEpubScroll();
