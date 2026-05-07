@@ -162,7 +162,8 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 .page-display { font-size: 0.9rem; color: var(--muted); }
 
 /* ── SIDEBAR ── */
-.reader-sidebar { width: 280px; border-right: 1px solid var(--border); background: var(--card); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+.reader-sidebar { width: 280px; border-right: 1px solid var(--border); background: var(--card); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; transition: width 0.22s ease; }
+.reader-sidebar.sidebar-hidden { width: 0; border-right: none; overflow: hidden; }
 .sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); }
 .stab { flex: 1; padding: 10px 4px; background: none; border: none; cursor: pointer; font-size: 1.2rem; color: var(--muted); border-bottom: 3px solid transparent; transition: all 0.2s; }
 .stab.active { color: var(--primary); border-bottom-color: var(--primary); background: var(--bg); }
@@ -252,7 +253,8 @@ textarea { resize: vertical; min-height: 80px; }
 .note-anchor-preview { background: var(--bg2); border-radius: 6px; padding: 8px 12px; font-style: italic; font-size: 0.85rem; margin-bottom: 12px; border-right: 3px solid var(--accent); }
 
 @media (max-width: 600px) {
-  .reader-sidebar { width: 100%; height: 280px; border-right: none; border-top: 1px solid var(--border); }
+  .reader-sidebar { width: 100%; height: 280px; border-right: none; border-top: 1px solid var(--border); transition: height 0.22s ease; }
+  .reader-sidebar.sidebar-hidden { width: 100%; height: 0; border-top: none; }
   .reader-body { flex-direction: column; }
   .form-grid { grid-template-columns: 1fr; }
   .book-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
@@ -392,7 +394,7 @@ const S = {
   _editingTocId: null, _addingToc: false,
   readerPanel: 'timer',
   timerRunning: false, timerMin: 25, timerSec: 0, timerInterval: null, pomodorosDone: 0,
-  theme: 'light', fontSize: 16,
+  theme: 'light', fontSize: 16, sidebarOpen: false,
   pendingSelText: '',
   db: null,
 };
@@ -475,6 +477,7 @@ async function init() {
     S.seriesList = await dbGetAll('series');
     S.theme = localStorage.getItem('theme') || 'light';
     S.fontSize = parseInt(localStorage.getItem('fontSize') || '16');
+    S.sidebarOpen = localStorage.getItem('sidebarOpen') === 'true';
     applyTheme();
     renderLib();
   } catch(e) {
@@ -487,6 +490,14 @@ async function init() {
 function applyTheme() {
   document.body.dataset.theme = S.theme;
 }
+function toggleSidebar() {
+  S.sidebarOpen = !S.sidebarOpen;
+  localStorage.setItem('sidebarOpen', S.sidebarOpen);
+  document.querySelector('.reader-sidebar')?.classList.toggle('sidebar-hidden', !S.sidebarOpen);
+  const btn = $id('sidebarToggleBtn');
+  if (btn) btn.classList.toggle('active', S.sidebarOpen);
+}
+
 function cycleTheme() {
   const themes = ['light','sepia','dark'];
   S.theme = themes[(themes.indexOf(S.theme) + 1) % themes.length];
@@ -1009,6 +1020,7 @@ function renderReaderUI() {
     <div class="reader-header-right">
       <span id="pageIndicator" class="page-indicator"></span>
       <button class="icon-btn" onclick="cycleTheme()" title="ערכת צבעים">🎨</button>
+      <button class="icon-btn${S.sidebarOpen?' active':''}" id="sidebarToggleBtn" onclick="toggleSidebar()" title="כלים">☰</button>
     </div>
   </div>
   <div class="reader-body">
@@ -1024,7 +1036,7 @@ function renderReaderUI() {
         <button class="nav-btn" onclick="nextPage()" id="nextBtn">הבא ►</button>
       </div>
     </div>
-    <aside class="reader-sidebar">
+    <aside class="reader-sidebar${S.sidebarOpen?'':' sidebar-hidden'}">
       <div class="sidebar-tabs">
         ${[['timer','⏱'],['notes','📝'],['dict','📒'],['bookmarks','🔖'],['settings','⚙️']].map(([p,ic])=>
           `<button class="stab ${S.readerPanel===p?'active':''}" onclick="switchPanel('${p}')">${ic}</button>`
