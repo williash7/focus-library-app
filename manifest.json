@@ -2,8 +2,8 @@
   "name": "ספריית הפוקוס",
   "short_name": "ספרייה",
   "description": "קורא ספרים חכם – PDF ו-EPUB עם כלים לקשב וריכוז",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "/focus-library-app/",
+  "scope": "/focus-library-app/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#fdf8f0",
@@ -41,7 +41,7 @@
   "shortcuts": [
     {
       "name": "פתח ספרייה",
-      "url": "/",
+      "url": "/focus-library-app/",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
