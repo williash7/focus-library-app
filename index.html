@@ -139,7 +139,11 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 
 #readerMain { flex: 1; overflow-y: auto; padding: 16px; display: flex; justify-content: center; align-items: flex-start; }
 .loading-msg { font-size: 1.1rem; color: var(--muted); padding: 40px; }
-#pdfCanvas { display: block; max-width: 100%; border-radius: 4px; box-shadow: var(--shadow); }
+#pdfContainer { position: relative; display: inline-block; max-width: 100%; border-radius: 4px; box-shadow: var(--shadow); }
+#pdfCanvas { display: block; max-width: 100%; }
+.pdf-text-layer { position: absolute; top: 0; left: 0; overflow: hidden; line-height: 1; user-select: text; pointer-events: none; }
+.pdf-text-layer span { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; pointer-events: all; }
+.pdf-text-layer span::selection { background: rgba(0, 100, 255, 0.25); }
 
 .epub-content { max-width: 680px; width: 100%; line-height: 1.8; font-size: 16px; color: var(--text); }
 .epub-content h1, .epub-content h2, .epub-content h3 { margin: 1em 0 0.5em; color: var(--primary); }
@@ -981,7 +985,7 @@ function renderReaderUI() {
     <div class="reader-main">
       <div id="readerMain">
         <div id="loadingMsg" class="loading-msg">⏳ טוען את הספר...</div>
-        <canvas id="pdfCanvas" style="display:none"></canvas>
+        <div id="pdfContainer" style="display:none"><canvas id="pdfCanvas"></canvas><div id="pdfTextLayer" class="pdf-text-layer"></div></div>
         <div id="epubContent" class="epub-content" style="display:none"></div>
       </div>
       <div class="reader-nav" id="readerNav" style="display:none">
@@ -1248,17 +1252,16 @@ async function initPdf(data) {
   try {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     const ab = data instanceof ArrayBuffer ? data : await data.arrayBuffer();
-    S.pdfDoc = await pdfjsLib.getDocument({ data: ab.slice(0), useSystemFonts: true, standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/' }).promise;
+    S.pdfDoc = await pdfjsLib.getDocument({ data: ab.slice(0), standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/' }).promise;
     S.currentBook.totalPages = S.pdfDoc.numPages;
     await dbPut('books', S.currentBook);
     const idx = S.books.findIndex(b=>b.id===S.currentBook.id);
     if (idx>=0) S.books[idx].totalPages = S.pdfDoc.numPages;
 
-    $id('pdfCanvas').style.display = 'block';
+    $id('pdfContainer').style.display = 'block';
     if (loadingEl) loadingEl.style.display = 'none';
     $id('readerNav').style.display = 'flex';
     await renderPdfPage(S.currentPage);
-    setupTextSelect($id('pdfCanvas'));
   } catch(e) {
     if (loadingEl) loadingEl.textContent = 'שגיאה בטעינת PDF: ' + e.message;
     console.error(e);
@@ -1286,6 +1289,24 @@ async function renderPdfPage(num) {
   canvas.style.width = Math.round(viewport.width / dpr) + 'px';
   canvas.style.height = Math.round(viewport.height / dpr) + 'px';
   await page.render({ canvasContext: ctx, viewport }).promise;
+
+  // Text layer — reassembles RTL/Hebrew glyphs into selectable, correctly-ordered text
+  const textLayer = $id('pdfTextLayer');
+  if (textLayer) {
+    textLayer.innerHTML = '';
+    textLayer.style.width = canvas.style.width;
+    textLayer.style.height = canvas.style.height;
+    try {
+      const textContent = await page.getTextContent();
+      await pdfjsLib.renderTextLayer({
+        textContentSource: textContent,
+        container: textLayer,
+        viewport,
+        textDivs: [],
+      }).promise;
+    } catch(e) { /* text layer is optional — canvas still works */ }
+  }
+
   updatePageDisplay();
 }
 
