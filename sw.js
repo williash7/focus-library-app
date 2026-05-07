@@ -1,17 +1,8 @@
-const CACHE = 'focus-library-v8';
-const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icons/icon.svg',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-];
+const CACHE = 'focus-library-v9';
 
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(ASSETS.filter(a => !a.endsWith('.png'))))
-  );
+  // Skip precaching — runtime caching in fetch handler handles everything.
+  // addAll fails if any asset 404s (e.g. on GitHub Pages subdirectory), so we avoid it.
   self.skipWaiting();
 });
 
@@ -35,7 +26,7 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(c => c.put(e.request, clone));
         }
         return res;
-      }).catch(() => caches.match('/index.html'));
+      }).catch(() => caches.match(e.request.url.includes('/index.html') ? e.request : new Request('index.html')));
     })
   );
 });
