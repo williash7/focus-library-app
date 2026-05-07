@@ -1525,6 +1525,7 @@ async function setupPdfContinuous() {
     }
   }
   updatePageDisplay();
+  setupTextSelect($id('pdfContainer'));
 }
 
 function onPdfScroll() {
@@ -1919,12 +1920,33 @@ function jumpToBookmark(id) {
 
 // ═══ TEXT SELECTION ═══
 let _selFab = null;
+let _selFabSetupDone = false;
+
 function setupTextSelect(el) {
   if (!el) return;
-  el.addEventListener('mouseup', () => {
-    const text = window.getSelection()?.toString().trim();
-    if (text && text.length > 1) { S.pendingSelText = text; showSelFab(); }
-  });
+  // mouseup covers desktop; selectionchange covers touch / mobile
+  el.addEventListener('mouseup', _onSelectionEnd);
+  el.addEventListener('touchend', _onSelectionEnd);
+  // selectionchange fires on mobile after native selection handles are moved
+  if (!_selFabSetupDone) {
+    let _scTimer = null;
+    document.addEventListener('selectionchange', () => {
+      clearTimeout(_scTimer);
+      _scTimer = setTimeout(_onSelectionEnd, 400);
+    });
+    _selFabSetupDone = true;
+  }
+}
+
+function _onSelectionEnd() {
+  const text = window.getSelection()?.toString().trim();
+  if (text && text.length > 1) {
+    S.pendingSelText = text;
+    showSelFab();
+  } else if (!text) {
+    // selection cleared — hide FAB
+    if (_selFab) { _selFab.remove(); _selFab = null; }
+  }
 }
 
 function showSelFab() {
@@ -1940,10 +1962,16 @@ function showSelFab() {
   const sel = window.getSelection();
   if (sel?.rangeCount) {
     const rect = sel.getRangeAt(0).getBoundingClientRect();
-    fab.style.top = Math.max(0, rect.top + window.scrollY - 56) + 'px';
-    fab.style.left = rect.left + window.scrollX + 'px';
+    // FAB is position:fixed — coordinates are viewport-relative, no scroll offset needed
+    const fabH = 48, fabW = 220;
+    let top = rect.top - fabH - 8;
+    if (top < 4) top = rect.bottom + 8; // flip below if no room above
+    let left = rect.left + rect.width / 2 - fabW / 2;
+    left = Math.max(4, Math.min(left, window.innerWidth - fabW - 4));
+    fab.style.top = top + 'px';
+    fab.style.left = left + 'px';
   }
-  setTimeout(() => { if (_selFab === fab) { fab.remove(); _selFab = null; } }, 6000);
+  setTimeout(() => { if (_selFab === fab) { fab.remove(); _selFab = null; } }, 8000);
 }
 
 // ═══ PDF COVER ═══
