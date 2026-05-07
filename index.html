@@ -139,8 +139,11 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 
 #readerMain { flex: 1; overflow-y: auto; padding: 16px; display: flex; justify-content: center; align-items: flex-start; }
 .loading-msg { font-size: 1.1rem; color: var(--muted); padding: 40px; }
-#pdfContainer { position: relative; display: inline-block; max-width: 100%; border-radius: 4px; box-shadow: var(--shadow); }
-#pdfCanvas { display: block; max-width: 100%; }
+#pdfContainer { width: 100%; }
+#pdfPagesContainer { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 8px 0; width: 100%; }
+.pdf-page-wrap { position: relative; box-shadow: var(--shadow); background: #fff; border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.pdf-page-wrap canvas { display: block; }
+.pdf-page-placeholder { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.8rem; background: var(--bg2); width: 100%; height: 100%; position: absolute; inset: 0; }
 .pdf-text-layer { position: absolute; top: 0; left: 0; overflow: hidden; line-height: 1; user-select: text; pointer-events: none; }
 .pdf-text-layer span { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; pointer-events: all; }
 .pdf-text-layer span::selection { background: rgba(0, 100, 255, 0.25); }
@@ -376,7 +379,7 @@ const S = {
   libShelfFilter: null, libSeriesFilter: null,
   currentBook: null, pdfDoc: null, currentPage: 1, totalPages: 0,
   epubChapters: [], epubChapterIdx: 0, epubZip: null, epubDir: '', epubImages: {},
-  pdfOutline: [], _outlineFlat: [],
+  pdfOutline: [], _outlineFlat: [], _pdfObserver: null, _pdfSaveTimer: null,
   readerPanel: 'timer',
   timerRunning: false, timerMin: 25, timerSec: 0, timerInterval: null, pomodorosDone: 0,
   theme: 'light', fontSize: 16,
@@ -953,6 +956,7 @@ async function openBook(bookId) {
   const book = S.books.find(b=>b.id===bookId);
   if (!book) return;
   if (!book.fileData) return alert('נתוני הספר חסרים. הוסף את הקובץ מחדש.');
+  if (S._pdfObserver) { S._pdfObserver.disconnect(); S._pdfObserver = null; }
   S.currentBook = book;
   S.currentPage = book.currentPage || 1;
   S.pdfDoc = null;
@@ -977,6 +981,8 @@ async function openBook(bookId) {
 
 function closeReader() {
   clearTimerInterval();
+  if (S._pdfObserver) { S._pdfObserver.disconnect(); S._pdfObserver = null; }
+  clearTimeout(S._pdfSaveTimer);
   $id('readerPage').style.display = 'none';
   $id('libPage').style.display = 'flex';
   S.currentBook = null;
@@ -999,7 +1005,7 @@ function renderReaderUI() {
     <div class="reader-main">
       <div id="readerMain">
         <div id="loadingMsg" class="loading-msg">⏳ טוען את הספר...</div>
-        <div id="pdfContainer" style="display:none"><canvas id="pdfCanvas"></canvas><div id="pdfTextLayer" class="pdf-text-layer"></div></div>
+        <div id="pdfContainer" style="display:none"><div id="pdfPagesContainer"></div></div>
         <div id="epubContent" class="epub-content" style="display:none"></div>
       </div>
       <div class="reader-nav" id="readerNav" style="display:none">
@@ -1285,54 +1291,148 @@ async function initPdf(data) {
     $id('pdfContainer').style.display = 'block';
     if (loadingEl) loadingEl.style.display = 'none';
     $id('readerNav').style.display = 'flex';
-    setupPdfScroll();
-    await renderPdfPage(S.currentPage);
+    await setupPdfContinuous();
   } catch(e) {
     if (loadingEl) loadingEl.textContent = 'שגיאה בטעינת PDF: ' + e.message;
     console.error(e);
   }
 }
 
+// Scroll to a PDF page (used by nav buttons, keyboard, bookmarks)
 async function renderPdfPage(num) {
   if (!S.pdfDoc) return;
   num = Math.max(1, Math.min(num, S.pdfDoc.numPages));
-  S.currentPage = num;
-  S.currentBook.currentPage = num;
-  await dbPut('books', S.currentBook);
+  const wrap = $id('readerMain')?.querySelector(`.pdf-page-wrap[data-page="${num}"]`);
+  if (!wrap) return;
+  if (!wrap.dataset.rendered) await renderPageIntoWrapper(num, wrap);
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
-  const page = await S.pdfDoc.getPage(num);
-  const canvas = $id('pdfCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
+// Renders a single page canvas+textLayer into its wrapper div
+async function renderPageIntoWrapper(pageNum, wrapper) {
+  if (wrapper.dataset.rendered) return;
+  wrapper.dataset.rendered = '1';
   const dpr = window.devicePixelRatio || 1;
-  const containerW = ($id('readerMain')?.clientWidth || 600) - 32;
+  const rm = $id('readerMain');
+  const containerW = (rm ? rm.clientWidth : 600) - 32;
+  const page = await S.pdfDoc.getPage(pageNum);
   const baseVP = page.getViewport({ scale: 1 });
   const scale = (containerW / baseVP.width) * dpr;
   const viewport = page.getViewport({ scale });
+  const w = Math.round(viewport.width / dpr);
+  const h = Math.round(viewport.height / dpr);
+
+  const canvas = document.createElement('canvas');
   canvas.width = Math.round(viewport.width);
   canvas.height = Math.round(viewport.height);
-  canvas.style.width = Math.round(viewport.width / dpr) + 'px';
-  canvas.style.height = Math.round(viewport.height / dpr) + 'px';
-  await page.render({ canvasContext: ctx, viewport }).promise;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
 
-  // Text layer — reassembles RTL/Hebrew glyphs into selectable, correctly-ordered text
-  const textLayer = $id('pdfTextLayer');
-  if (textLayer) {
-    textLayer.innerHTML = '';
-    textLayer.style.width = canvas.style.width;
-    textLayer.style.height = canvas.style.height;
-    try {
-      const textContent = await page.getTextContent();
-      await pdfjsLib.renderTextLayer({
-        textContentSource: textContent,
-        container: textLayer,
-        viewport,
-        textDivs: [],
-      }).promise;
-    } catch(e) { /* text layer is optional — canvas still works */ }
+  const textLayer = document.createElement('div');
+  textLayer.className = 'pdf-text-layer';
+  textLayer.style.width = w + 'px';
+  textLayer.style.height = h + 'px';
+  try {
+    const textContent = await page.getTextContent();
+    await pdfjsLib.renderTextLayer({ textContentSource: textContent, container: textLayer, viewport, textDivs: [] }).promise;
+  } catch(e) {}
+
+  wrapper.style.width = w + 'px';
+  wrapper.style.height = h + 'px';
+  const placeholder = wrapper.querySelector('.pdf-page-placeholder');
+  if (placeholder) placeholder.remove();
+  wrapper.appendChild(canvas);
+  wrapper.appendChild(textLayer);
+}
+
+async function setupPdfContinuous() {
+  if (S._pdfObserver) { S._pdfObserver.disconnect(); S._pdfObserver = null; }
+  const numPages = S.pdfDoc.numPages;
+  const dpr = window.devicePixelRatio || 1;
+  const rm = $id('readerMain');
+  const containerW = (rm ? rm.clientWidth : 600) - 32;
+
+  // Use page 1 dimensions as template for all placeholder heights
+  const p1 = await S.pdfDoc.getPage(1);
+  const baseVP = p1.getViewport({ scale: 1 });
+  const scale = containerW / baseVP.width;
+  const pageH = Math.round(baseVP.height * scale);
+  const pageW = Math.round(baseVP.width * scale);
+
+  const container = $id('pdfPagesContainer');
+  container.innerHTML = '';
+
+  for (let i = 1; i <= numPages; i++) {
+    const wrap = document.createElement('div');
+    wrap.className = 'pdf-page-wrap';
+    wrap.dataset.page = i;
+    wrap.style.width = pageW + 'px';
+    wrap.style.height = pageH + 'px';
+    const ph = document.createElement('div');
+    ph.className = 'pdf-page-placeholder';
+    ph.textContent = i + ' / ' + numPages;
+    wrap.appendChild(ph);
+    container.appendChild(wrap);
   }
 
+  // Lazy render via IntersectionObserver
+  S._pdfObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) renderPageIntoWrapper(+entry.target.dataset.page, entry.target);
+    });
+  }, { root: rm, rootMargin: '300px' });
+  container.querySelectorAll('.pdf-page-wrap').forEach(w => S._pdfObserver.observe(w));
+
+  // Track current page + progress from scroll
+  if (rm) {
+    rm.addEventListener('scroll', onPdfScroll, { passive: true });
+  }
+
+  // Restore saved page (no animation on initial load)
+  const savedPage = S.currentPage || 1;
+  if (savedPage > 1) {
+    const targetWrap = container.querySelector(`[data-page="${savedPage}"]`);
+    if (targetWrap) {
+      // Pre-render target and scroll without animation
+      await renderPageIntoWrapper(savedPage, targetWrap);
+      targetWrap.scrollIntoView({ block: 'start' });
+    }
+  }
   updatePageDisplay();
+}
+
+function onPdfScroll() {
+  if (!S.pdfDoc) return;
+  const rm = $id('readerMain');
+  if (!rm) return;
+
+  // Detect which page is most visible (its top is closest to viewport top)
+  const rmTop = rm.getBoundingClientRect().top;
+  const wraps = rm.querySelectorAll('.pdf-page-wrap');
+  let best = null, bestDist = Infinity;
+  for (const w of wraps) {
+    const dist = Math.abs(w.getBoundingClientRect().top - rmTop);
+    if (dist < bestDist) { bestDist = dist; best = w; }
+  }
+  const pageNum = best ? +best.dataset.page : S.currentPage;
+
+  if (pageNum !== S.currentPage) {
+    S.currentPage = pageNum;
+    S.currentBook.currentPage = pageNum;
+    clearTimeout(S._pdfSaveTimer);
+    S._pdfSaveTimer = setTimeout(() => dbPut('books', S.currentBook), 1000);
+    const pd = $id('pageDisplay');
+    if (pd) pd.textContent = `${pageNum} / ${S.pdfDoc.numPages}`;
+    const prev = $id('prevBtn'), next = $id('nextBtn');
+    if (prev) prev.disabled = pageNum <= 1;
+    if (next) next.disabled = pageNum >= S.pdfDoc.numPages;
+  }
+
+  // Scroll-based progress
+  const scrollFrac = rm.scrollHeight > rm.clientHeight ? rm.scrollTop / (rm.scrollHeight - rm.clientHeight) : 0;
+  const pi = $id('pageIndicator');
+  if (pi) pi.textContent = Math.round(scrollFrac * 100) + '%';
 }
 
 // ═══ EPUB READER ═══
@@ -1410,7 +1510,7 @@ async function initEpub(data) {
     const savedPct = S.currentBook.epubScrollPct || 0;
     if (savedPct > 0) {
       setTimeout(() => {
-        const el = $id('epubContent');
+        const el = $id('readerMain');
         if (el) el.scrollTop = (el.scrollHeight - el.clientHeight) * savedPct / 100;
       }, 200);
     }
@@ -1423,33 +1523,13 @@ async function initEpub(data) {
   }
 }
 
-async function renderEpubChapter(idx) {
+function renderEpubChapter(idx) {
   if (!S.epubChapters.length) return;
-  idx = Math.max(0, Math.min(idx, S.epubChapters.length-1));
+  idx = Math.max(0, Math.min(idx, S.epubChapters.length - 1));
   S.epubChapterIdx = idx;
-  S.currentBook.currentPage = idx + 1;
-  await dbPut('books', S.currentBook);
-
-  const chapter = S.epubChapters[idx];
-  const candidates = [chapter.href, chapter.href.replace(S.epubDir,'')];
-  let chapterFile = null;
-  for (const c of candidates) { chapterFile = S.epubZip.file(c); if (chapterFile) break; }
-  if (!chapterFile) { updatePageDisplay(); return; }
-
-  const html = await chapterFile.async('string');
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('script').forEach(el=>el.remove());
-  doc.querySelectorAll('img').forEach(img => {
-    const src = img.getAttribute('src')||'';
-    const resolved = resolveEpubPath(chapter.href, src);
-    const blobUrl = S.epubImages[resolved] || S.epubImages[src];
-    if (blobUrl) img.src = blobUrl;
-    else img.style.display = 'none';
-  });
-  const body = doc.querySelector('body');
-  const el = $id('epubContent');
-  if (el) { el.innerHTML = body ? body.innerHTML : ''; el.scrollTop = 0; }
-  updatePageDisplay();
+  // In continuous scroll mode, scroll to the chapter div
+  const chDiv = document.querySelector(`#epubContent [data-idx="${idx}"]`);
+  if (chDiv) chDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function resolveEpubPath(base, relative) {
@@ -1466,39 +1546,30 @@ function resolveEpubPath(base, relative) {
 // ═══ NAVIGATION ═══
 async function nextPage() {
   if (S.pdfDoc) {
-    if (S.currentPage < S.pdfDoc.numPages) await renderPdfPage(S.currentPage+1);
+    if (S.currentPage < S.pdfDoc.numPages) await renderPdfPage(S.currentPage + 1);
   } else {
-    if (S.epubChapterIdx < S.epubChapters.length-1) await renderEpubChapter(S.epubChapterIdx+1);
+    renderEpubChapter(S.epubChapterIdx + 1);
   }
 }
 async function prevPage() {
   if (S.pdfDoc) {
-    if (S.currentPage > 1) await renderPdfPage(S.currentPage-1);
+    if (S.currentPage > 1) await renderPdfPage(S.currentPage - 1);
   } else {
-    if (S.epubChapterIdx > 0) await renderEpubChapter(S.epubChapterIdx-1);
+    renderEpubChapter(S.epubChapterIdx - 1);
   }
 }
 
 function updatePageDisplay() {
-  const total = S.pdfDoc ? S.pdfDoc.numPages : S.epubChapters.length;
-  const cur = S.pdfDoc ? S.currentPage : S.epubChapterIdx + 1;
-  const pd = $id('pageDisplay');
-  if (pd) pd.textContent = S.pdfDoc ? `${cur} / ${total}` : `${total ? Math.round((cur/total)*100) : 0}% קרוא`;
-  if (S.pdfDoc) updatePdfScrollProgress();
-  const prev = $id('prevBtn'), next = $id('nextBtn');
-  if (prev) prev.disabled = cur <= 1;
-  if (next) next.disabled = cur >= total;
-}
-
-function updatePdfScrollProgress() {
-  if (!S.pdfDoc) return;
-  const rm = $id('readerMain');
-  const total = S.pdfDoc.numPages;
-  const scrollFrac = rm && rm.scrollHeight > rm.clientHeight
-    ? rm.scrollTop / (rm.scrollHeight - rm.clientHeight) : 0;
-  const pct = total ? Math.round(((S.currentPage - 1 + scrollFrac) / total) * 100) : 0;
-  const pi = $id('pageIndicator');
-  if (pi) pi.textContent = pct + '%';
+  if (S.pdfDoc) {
+    const total = S.pdfDoc.numPages;
+    const pd = $id('pageDisplay');
+    if (pd) pd.textContent = `${S.currentPage} / ${total}`;
+    const prev = $id('prevBtn'), next = $id('nextBtn');
+    if (prev) prev.disabled = S.currentPage <= 1;
+    if (next) next.disabled = S.currentPage >= total;
+    // progress updated live by onPdfScroll
+  }
+  // EPUB progress updated live by updateEpubScrollProgress
 }
 
 document.addEventListener('keydown', e => {
@@ -1508,46 +1579,8 @@ document.addEventListener('keydown', e => {
   if (e.key==='ArrowRight'||e.key==='ArrowUp') prevPage();
 });
 
-// ═══ PDF SCROLL NAVIGATION ═══
-function setupPdfScroll() {
-  const el = $id('readerMain');
-  if (!el) return;
-  let _locked = false;
-  function lock() { _locked = true; setTimeout(() => _locked = false, 700); }
-
-  el.addEventListener('wheel', e => {
-    if (!S.pdfDoc) return;
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-    const atTop = el.scrollTop <= 4;
-    if (e.deltaY > 0 && atBottom) {
-      e.preventDefault();
-      if (_locked) return;
-      lock();
-      nextPage().then(() => { const r = $id('readerMain'); if (r) r.scrollTop = 0; });
-    } else if (e.deltaY < 0 && atTop) {
-      e.preventDefault();
-      if (_locked) return;
-      lock();
-      prevPage().then(() => { const r = $id('readerMain'); if (r) r.scrollTop = r.scrollHeight; });
-    }
-  }, { passive: false });
-
-  let _ty = 0;
-  el.addEventListener('touchstart', e => { _ty = e.touches[0].clientY; }, { passive: true });
-  el.addEventListener('touchend', e => {
-    if (!S.pdfDoc) return;
-    if (_locked) return;
-    const dy = _ty - e.changedTouches[0].clientY;
-    const r = $id('readerMain');
-    if (!r) return;
-    const atBottom = r.scrollTop + r.clientHeight >= r.scrollHeight - 8;
-    const atTop = r.scrollTop <= 8;
-    if (dy > 60 && atBottom) { lock(); nextPage().then(() => { r.scrollTop = 0; }); }
-    else if (dy < -60 && atTop) { lock(); prevPage().then(() => { r.scrollTop = r.scrollHeight; }); }
-  }, { passive: true });
-
-  el.addEventListener('scroll', () => { if (S.pdfDoc) updatePdfScrollProgress(); }, { passive: true });
-}
+// setupPdfScroll is replaced by onPdfScroll (registered inside setupPdfContinuous)
+function setupPdfScroll() {}
 
 // ═══ BOOKMARKS ═══
 function renderBookmarksPanel() {
@@ -1618,12 +1651,13 @@ function jumpToBookmark(id) {
   if (S.pdfDoc) {
     renderPdfPage(bm.page);
   } else {
-    renderEpubChapter(bm.epubChapterIdx != null ? bm.epubChapterIdx : bm.page - 1);
+    const chIdx = bm.epubChapterIdx != null ? bm.epubChapterIdx : bm.page - 1;
+    renderEpubChapter(chIdx);
     if (bm.scrollPct != null) {
       setTimeout(() => {
-        const el = $id('epubContent');
+        const el = $id('readerMain');
         if (el) el.scrollTop = Math.round(bm.scrollPct / 100 * (el.scrollHeight - el.clientHeight));
-      }, 400);
+      }, 500);
     }
   }
 }
@@ -1778,14 +1812,15 @@ async function loadAllEpubContent() {
 }
 
 function setupEpubScroll() {
-  const el = document.getElementById('epubContent');
+  const el = document.getElementById('readerMain');
   if (!el) return;
   let t = null;
   el.addEventListener('scroll', () => {
+    if (S.pdfDoc) return;
     updateEpubScrollProgress();
     clearTimeout(t);
     t = setTimeout(async () => {
-      if (!S.currentBook) return;
+      if (!S.currentBook || S.pdfDoc) return;
       S.currentBook.epubScrollPct = getEpubScrollPct();
       S.currentBook.currentPage = Math.max(1, Math.round(S.currentBook.epubScrollPct / 100 * S.epubChapters.length));
       await dbPut('books', S.currentBook);
@@ -1794,18 +1829,18 @@ function setupEpubScroll() {
 }
 
 function getEpubScrollPct() {
-  const el = document.getElementById('epubContent');
+  const el = document.getElementById('readerMain');
   if (!el) return 0;
   const total = el.scrollHeight - el.clientHeight;
   return total > 0 ? Math.round((el.scrollTop / total) * 100) : 0;
 }
 
 function updateEpubScrollProgress() {
-  if (S.pdfDoc) return; // PDF uses page-based progress
+  if (S.pdfDoc) return;
   const pct = getEpubScrollPct();
-  const pi = document.getElementById('pageIndicator');
+  const pi = $id('pageIndicator');
   if (pi) pi.textContent = pct + '%';
-  const pd = document.getElementById('pageDisplay');
+  const pd = $id('pageDisplay');
   if (pd) pd.textContent = pct + '% קרוא';
 }
 
