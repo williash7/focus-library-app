@@ -194,6 +194,13 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 .theme-btn { padding: 6px 12px; border-radius: 8px; border: 2px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; font-size: 0.82rem; }
 .theme-btn.active { border-color: var(--primary); background: var(--primary); color: white; }
 
+/* ── BOOKMARKS PANEL ── */
+.bm-section-title { font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.outline-list { max-height: 220px; overflow-y: auto; margin-bottom: 4px; }
+.outline-item { padding: 6px 8px; font-size: 0.82rem; color: var(--text); cursor: pointer; border-radius: 6px; line-height: 1.3; }
+.outline-item:hover, .outline-item.active { background: var(--bg2); color: var(--primary); }
+.bm-date { font-weight: 400; color: var(--muted); font-size: 0.7rem; }
+
 /* ── FLOATING SELECTION BUTTON ── */
 .sel-fab { position: fixed; z-index: 999; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); display: flex; gap: 4px; padding: 6px; }
 .sel-fab button { padding: 6px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.8rem; color: var(--text); white-space: nowrap; }
@@ -364,11 +371,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <script>// ═══ STATE ═══
 const S = {
   books: [], shelves: [], seriesList: [],
-  annotations: [], dictionary: [],
+  annotations: [], dictionary: [], bookmarks: [],
   libTab: 'books', libView: 'list', libSort: 'date', libSearch: '',
   libShelfFilter: null, libSeriesFilter: null,
   currentBook: null, pdfDoc: null, currentPage: 1, totalPages: 0,
   epubChapters: [], epubChapterIdx: 0, epubZip: null, epubDir: '', epubImages: {},
+  pdfOutline: [], _outlineFlat: [],
   readerPanel: 'timer',
   timerRunning: false, timerMin: 25, timerSec: 0, timerInterval: null, pomodorosDone: 0,
   theme: 'light', fontSize: 16,
@@ -379,7 +387,7 @@ const S = {
 // ═══ DATABASE ═══
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('FocusLibrary', 3);
+    const r = indexedDB.open('FocusLibrary', 4);
     r.onupgradeneeded = e => {
       const d = e.target.result;
       if (!d.objectStoreNames.contains('books'))
@@ -396,6 +404,10 @@ function openDB() {
         d.createObjectStore('shelves', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('series'))
         d.createObjectStore('series', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('bookmarks')) {
+        const bm = d.createObjectStore('bookmarks', { keyPath: 'id' });
+        bm.createIndex('bookId', 'bookId');
+      }
     };
     r.onsuccess = e => { S.db = e.target.result; res(); };
     r.onerror = rej;
@@ -944,12 +956,14 @@ async function openBook(bookId) {
   S.currentBook = book;
   S.currentPage = book.currentPage || 1;
   S.pdfDoc = null;
+  S.pdfOutline = [];
   S.epubChapters = [];
   S.epubChapterIdx = 0;
   S.epubZip = null;
   S.epubImages = {};
   S.annotations = await dbGetByIndex('annotations','bookId',bookId);
   S.dictionary = await dbGetAll('dictionary');
+  S.bookmarks = await dbGetByIndex('bookmarks','bookId',bookId);
   book.lastRead = Date.now();
   await dbPut('books', book);
 
@@ -996,7 +1010,7 @@ function renderReaderUI() {
     </div>
     <aside class="reader-sidebar">
       <div class="sidebar-tabs">
-        ${[['timer','⏱'],['notes','📝'],['dict','📒'],['settings','⚙️']].map(([p,ic])=>
+        ${[['timer','⏱'],['notes','📝'],['dict','📒'],['bookmarks','🔖'],['settings','⚙️']].map(([p,ic])=>
           `<button class="stab ${S.readerPanel===p?'active':''}" onclick="switchPanel('${p}')">${ic}</button>`
         ).join('')}
       </div>
@@ -1009,7 +1023,7 @@ function renderReaderUI() {
 function switchPanel(panel) {
   S.readerPanel = panel;
   document.querySelectorAll('.stab').forEach(b => {
-    const map = {timer:'⏱',notes:'📝',dict:'📒',settings:'⚙️'};
+    const map = {timer:'⏱',notes:'📝',dict:'📒',bookmarks:'🔖',settings:'⚙️'};
     b.classList.toggle('active', b.textContent.trim() === map[panel]);
   });
   const el = $id('sidebarContent');
@@ -1017,6 +1031,7 @@ function switchPanel(panel) {
   if (panel === 'timer') el.innerHTML = renderTimerPanel();
   else if (panel === 'notes') el.innerHTML = renderNotesPanel();
   else if (panel === 'dict') el.innerHTML = renderDictPanel();
+  else if (panel === 'bookmarks') el.innerHTML = renderBookmarksPanel();
   else if (panel === 'settings') el.innerHTML = renderSettingsPanel();
 }
 
@@ -1264,9 +1279,13 @@ async function initPdf(data) {
     const idx = S.books.findIndex(b=>b.id===S.currentBook.id);
     if (idx>=0) S.books[idx].totalPages = S.pdfDoc.numPages;
 
+    S.pdfOutline = [];
+    try { S.pdfOutline = await S.pdfDoc.getOutline() || []; } catch(e) {}
+
     $id('pdfContainer').style.display = 'block';
     if (loadingEl) loadingEl.style.display = 'none';
     $id('readerNav').style.display = 'flex';
+    setupPdfScroll();
     await renderPdfPage(S.currentPage);
   } catch(e) {
     if (loadingEl) loadingEl.textContent = 'שגיאה בטעינת PDF: ' + e.message;
@@ -1463,14 +1482,23 @@ async function prevPage() {
 function updatePageDisplay() {
   const total = S.pdfDoc ? S.pdfDoc.numPages : S.epubChapters.length;
   const cur = S.pdfDoc ? S.currentPage : S.epubChapterIdx + 1;
-  const pct = total ? Math.round((cur/total)*100) : 0;
   const pd = $id('pageDisplay');
-  if (pd) pd.textContent = `${cur} / ${total}`;
-  const pi = $id('pageIndicator');
-  if (pi) pi.textContent = `${pct}%`;
+  if (pd) pd.textContent = S.pdfDoc ? `${cur} / ${total}` : `${total ? Math.round((cur/total)*100) : 0}% קרוא`;
+  if (S.pdfDoc) updatePdfScrollProgress();
   const prev = $id('prevBtn'), next = $id('nextBtn');
   if (prev) prev.disabled = cur <= 1;
   if (next) next.disabled = cur >= total;
+}
+
+function updatePdfScrollProgress() {
+  if (!S.pdfDoc) return;
+  const rm = $id('readerMain');
+  const total = S.pdfDoc.numPages;
+  const scrollFrac = rm && rm.scrollHeight > rm.clientHeight
+    ? rm.scrollTop / (rm.scrollHeight - rm.clientHeight) : 0;
+  const pct = total ? Math.round(((S.currentPage - 1 + scrollFrac) / total) * 100) : 0;
+  const pi = $id('pageIndicator');
+  if (pi) pi.textContent = pct + '%';
 }
 
 document.addEventListener('keydown', e => {
@@ -1479,6 +1507,143 @@ document.addEventListener('keydown', e => {
   if (e.key==='ArrowLeft'||e.key==='ArrowDown') nextPage();
   if (e.key==='ArrowRight'||e.key==='ArrowUp') prevPage();
 });
+
+// ═══ PDF SCROLL NAVIGATION ═══
+function setupPdfScroll() {
+  const el = $id('readerMain');
+  if (!el) return;
+  let _locked = false;
+  function lock() { _locked = true; setTimeout(() => _locked = false, 700); }
+
+  el.addEventListener('wheel', e => {
+    if (!S.pdfDoc) return;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+    const atTop = el.scrollTop <= 4;
+    if (e.deltaY > 0 && atBottom) {
+      e.preventDefault();
+      if (_locked) return;
+      lock();
+      nextPage().then(() => { const r = $id('readerMain'); if (r) r.scrollTop = 0; });
+    } else if (e.deltaY < 0 && atTop) {
+      e.preventDefault();
+      if (_locked) return;
+      lock();
+      prevPage().then(() => { const r = $id('readerMain'); if (r) r.scrollTop = r.scrollHeight; });
+    }
+  }, { passive: false });
+
+  let _ty = 0;
+  el.addEventListener('touchstart', e => { _ty = e.touches[0].clientY; }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (!S.pdfDoc) return;
+    if (_locked) return;
+    const dy = _ty - e.changedTouches[0].clientY;
+    const r = $id('readerMain');
+    if (!r) return;
+    const atBottom = r.scrollTop + r.clientHeight >= r.scrollHeight - 8;
+    const atTop = r.scrollTop <= 8;
+    if (dy > 60 && atBottom) { lock(); nextPage().then(() => { r.scrollTop = 0; }); }
+    else if (dy < -60 && atTop) { lock(); prevPage().then(() => { r.scrollTop = r.scrollHeight; }); }
+  }, { passive: true });
+
+  el.addEventListener('scroll', () => { if (S.pdfDoc) updatePdfScrollProgress(); }, { passive: true });
+}
+
+// ═══ BOOKMARKS ═══
+function renderBookmarksPanel() {
+  const bms = S.bookmarks || [];
+
+  // Build outline HTML
+  let outlineHtml = '';
+  if (S.pdfOutline && S.pdfOutline.length) {
+    S._outlineFlat = [];
+    const renderItems = (items, depth) => items.map(item => {
+      const idx = S._outlineFlat.push(item.dest) - 1;
+      return `<div class="outline-item" style="padding-right:${depth*12}px"
+           onclick="jumpToOutlineItem(${idx})">${esc(item.title||'')}</div>
+      ${item.items?.length ? renderItems(item.items, depth+1) : ''}`;
+    }).join('');
+    outlineHtml = `<div class="bm-section-title">📋 תוכן עניינים</div>
+      <div class="outline-list">${renderItems(S.pdfOutline, 0)}</div>`;
+  } else if (!S.pdfDoc && S.epubChapters.length) {
+    const items = S.epubChapters.map((ch,i) => `
+      <div class="outline-item ${i===S.epubChapterIdx?'active':''}" onclick="renderEpubChapter(${i})">
+        ${esc(ch.label||ch.title||`פרק ${i+1}`)}</div>`).join('');
+    outlineHtml = `<div class="bm-section-title">📋 פרקים</div><div class="outline-list">${items}</div>`;
+  }
+
+  const bmCards = bms.map(bm => `
+    <div class="note-card">
+      <div class="note-type">עמ׳ ${bm.page}${bm.label?' • '+esc(bm.label):''} <span class="bm-date">${new Date(bm.created).toLocaleDateString('he-IL')}</span></div>
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <button class="btn-secondary" style="flex:1;font-size:0.8rem" onclick="jumpToBookmark('${bm.id}')">↗ עבור</button>
+        <button class="icon-btn del-note" onclick="deleteBookmark('${bm.id}')">🗑️</button>
+      </div>
+    </div>`).join('') || '<p class="muted" style="text-align:center;padding:16px">אין סימניות לספר זה</p>';
+
+  return `<div class="notes-panel">
+    <button class="btn-primary" style="width:100%;margin-bottom:12px" onclick="addBookmark()">📌 הוסף סימנייה כאן</button>
+    ${outlineHtml}
+    <div class="bm-section-title">🔖 הסימניות שלי</div>
+    <div class="note-list">${bmCards}</div>
+  </div>`;
+}
+
+async function addBookmark() {
+  const label = prompt('תווית לסימנייה (אפשר להשאיר ריק):', '') ?? null;
+  if (label === null) return;
+  const bm = {
+    id: uid(), bookId: S.currentBook.id,
+    page: S.pdfDoc ? S.currentPage : S.epubChapterIdx + 1,
+    epubChapterIdx: S.pdfDoc ? null : S.epubChapterIdx,
+    scrollPct: S.pdfDoc ? null : getEpubScrollPct(),
+    label: label.trim(),
+    created: Date.now(),
+  };
+  await dbPut('bookmarks', bm);
+  S.bookmarks.push(bm);
+  if (S.readerPanel === 'bookmarks') switchPanel('bookmarks');
+}
+
+async function deleteBookmark(id) {
+  if (!confirm('למחוק סימנייה זו?')) return;
+  await dbDelete('bookmarks', id);
+  S.bookmarks = S.bookmarks.filter(b => b.id !== id);
+  if (S.readerPanel === 'bookmarks') switchPanel('bookmarks');
+}
+
+function jumpToBookmark(id) {
+  const bm = S.bookmarks.find(b => b.id === id);
+  if (!bm) return;
+  if (S.pdfDoc) {
+    renderPdfPage(bm.page);
+  } else {
+    renderEpubChapter(bm.epubChapterIdx != null ? bm.epubChapterIdx : bm.page - 1);
+    if (bm.scrollPct != null) {
+      setTimeout(() => {
+        const el = $id('epubContent');
+        if (el) el.scrollTop = Math.round(bm.scrollPct / 100 * (el.scrollHeight - el.clientHeight));
+      }, 400);
+    }
+  }
+}
+
+async function jumpToOutlineItem(idx) {
+  if (!S.pdfDoc) return;
+  const dest = S._outlineFlat?.[idx];
+  if (!dest) return;
+  try {
+    let pageIndex;
+    if (typeof dest === 'string') {
+      const d = await S.pdfDoc.getDestination(dest);
+      if (!d) return;
+      pageIndex = await S.pdfDoc.getPageIndex(d[0]);
+    } else if (Array.isArray(dest)) {
+      pageIndex = await S.pdfDoc.getPageIndex(dest[0]);
+    } else return;
+    await renderPdfPage(pageIndex + 1);
+  } catch(e) {}
+}
 
 // ═══ TEXT SELECTION ═══
 let _selFab = null;

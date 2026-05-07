@@ -1,4 +1,4 @@
-const CACHE = 'focus-library-v4';
+const CACHE = 'focus-library-v5';
 const ASSETS = [
   '/',
   '/index.html',
