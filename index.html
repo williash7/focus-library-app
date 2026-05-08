@@ -915,19 +915,51 @@ async function handleFiles(files) {
     };
     if (ext === 'pdf') {
       try {
-        const cover = await extractPdfCover(ab.slice(0));
-        if (cover) book.coverUrl = cover;
-        const doc = await pdfjsLib.getDocument({ data: ab.slice(0), useSystemFonts: true, standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/' }).promise;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const doc = await pdfjsLib.getDocument({
+          data: ab.slice(0), useSystemFonts: true,
+          standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
+        }).promise;
         book.totalPages = doc.numPages;
+        // cover from page 1
+        try {
+          const page = await doc.getPage(1);
+          const vp = page.getViewport({ scale: 0.4 });
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+          book.coverUrl = canvas.toDataURL('image/jpeg', 0.7);
+        } catch(e) {}
+        // metadata
+        try {
+          const { info, metadata } = await doc.getMetadata();
+          const get = k => (info[k] || '').toString().trim();
+          const xmp = k => { try { return metadata?.get(k)?.trim() || ''; } catch(_) { return ''; } };
+          const yr = (get('CreationDate').match(/D:(\d{4})/) || get('CreationDate').match(/(\d{4})/))?.[1] || '';
+          const metaTitle = get('Title') || xmp('dc:title');
+          if (metaTitle) book.title = metaTitle;
+          const metaAuthor = get('Author') || xmp('dc:creator');
+          if (metaAuthor) book.author = metaAuthor;
+          const metaPub = xmp('dc:publisher');
+          if (metaPub) book.publisher = metaPub;
+          if (yr) book.year = yr;
+          const metaGenre = get('Subject') || xmp('dc:subject');
+          if (metaGenre) book.genre = metaGenre;
+        } catch(e) {}
         doc.destroy();
-      } catch(e) { console.warn('PDF meta error', e); }
+      } catch(e) { console.warn('PDF error', e); }
     }
     if (ext === 'epub') {
       try {
         const zip = await JSZip.loadAsync(ab.slice(0));
-        const cover = await extractEpubCoverFromZip(zip);
+        const [cover, meta] = await Promise.all([extractEpubCoverFromZip(zip), extractEpubMeta(zip)]);
         if (cover) book.coverUrl = cover;
-      } catch(e) { console.warn('EPUB cover error', e); }
+        if (meta.title) book.title = meta.title;
+        if (meta.author) book.author = meta.author;
+        if (meta.publisher) book.publisher = meta.publisher;
+        if (meta.year) book.year = meta.year;
+        if (meta.genre) book.genre = meta.genre;
+      } catch(e) { console.warn('EPUB error', e); }
     }
     await dbPut('files', { id: book.id, data: ab });
     await dbPut('books', book);
@@ -2180,6 +2212,27 @@ async function extractPdfCover(data) {
   } catch(e) { return null; }
 }
 
+
+// ═══ EPUB META ═══
+async function extractEpubMeta(zip) {
+  try {
+    const containerXml = await zip.file('META-INF/container.xml')?.async('string');
+    if (!containerXml) return {};
+    const opfPath = containerXml.match(/full-path="([^"]+)"/)?.[1];
+    if (!opfPath) return {};
+    const opfXml = await zip.file(opfPath)?.async('string');
+    if (!opfXml) return {};
+    const doc = new DOMParser().parseFromString(opfXml, 'application/xml');
+    const dc = tag => {
+      const ns = 'http://purl.org/dc/elements/1.1/';
+      return (doc.getElementsByTagNameNS(ns, tag)[0]
+        || doc.querySelector(`dc\\:${tag}`)
+        || doc.querySelector(tag))?.textContent?.trim() || '';
+    };
+    const year = dc('date').match(/(\d{4})/)?.[1] || '';
+    return { title: dc('title'), author: dc('creator'), publisher: dc('publisher'), year, genre: dc('subject') };
+  } catch(e) { return {}; }
+}
 
 // ═══ EPUB COVER EXTRACTION ═══
 async function extractEpubCoverFromZip(zip) {
