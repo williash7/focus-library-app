@@ -500,6 +500,7 @@ const S = {
 };
 
 // ═══ DATABASE ═══
+// פותח את מסד הנתונים של IndexedDB ומגדיר את מבנה האחסון
 function openDB() {
   return new Promise((res, rej) => {
     const r = indexedDB.open('FocusLibrary', 5);
@@ -548,9 +549,11 @@ function openDB() {
     r.onerror = rej;
   });
 }
+// מחזיר אובייקט-חנות של IndexedDB לפי שם ומצב (קריאה/כתיבה)
 function dbTx(store, mode) {
   return S.db.transaction(store, mode || 'readonly').objectStore(store);
 }
+// מחזיר את כל הרשומות מחנות נתונים נתונה
 function dbGetAll(store) {
   return new Promise((res, rej) => {
     const r = dbTx(store).getAll();
@@ -558,6 +561,7 @@ function dbGetAll(store) {
     r.onerror = rej;
   });
 }
+// מחזיר רשומה בודדת לפי מזהה מחנות נתונים
 function dbGet(store, id) {
   return new Promise((res, rej) => {
     const r = dbTx(store).get(id);
@@ -565,6 +569,7 @@ function dbGet(store, id) {
     r.onerror = rej;
   });
 }
+// שומר או מעדכן רשומה בחנות נתונים
 function dbPut(store, obj) {
   return new Promise((res, rej) => {
     const r = dbTx(store, 'readwrite').put(obj);
@@ -577,6 +582,7 @@ function bookMeta(b) {
   const { fileData, _fileData, ...meta } = b;
   return meta;
 }
+// מוחק רשומה לפי מזהה מחנות נתונים
 function dbDelete(store, id) {
   return new Promise((res, rej) => {
     const r = dbTx(store, 'readwrite').delete(id);
@@ -584,6 +590,7 @@ function dbDelete(store, id) {
     r.onerror = rej;
   });
 }
+// מחזיר רשומות מחנות נתונים לפי ערך אינדקס
 function dbGetByIndex(store, idx, val) {
   return new Promise((res, rej) => {
     const r = dbTx(store).index(idx).getAll(val);
@@ -599,6 +606,7 @@ const esc = s => (s || '').toString()
 const $id = id => document.getElementById(id);
 
 // ═══ INIT ═══
+// מאתחל את האפליקציה, פותח את מסד הנתונים ומציג את הספרייה
 async function init() {
   const libPage = document.getElementById('libPage');
   if (libPage) libPage.innerHTML = '<div style="text-align:center;padding:60px 20px;font-family:Arial,sans-serif;color:#5c3d2e"><div style="font-size:3rem">📚</div><p style="margin-top:12px">טוען ספרייה...</p></div>';
@@ -619,9 +627,11 @@ async function init() {
 }
 
 // ═══ THEME ═══
+// מחיל את ערכת הצבעים הנוכחית על גוף הדף
 function applyTheme() {
   document.body.dataset.theme = S.theme;
 }
+// מחליף את מצב הפאנל הצדדי בין פתוח לסגור
 function toggleSidebar() {
   S.sidebarOpen = !S.sidebarOpen;
   localStorage.setItem('sidebarOpen', S.sidebarOpen);
@@ -630,6 +640,7 @@ function toggleSidebar() {
   if (btn) btn.classList.toggle('active', S.sidebarOpen);
 }
 
+// עובר לערכת הצבעים הבאה במחזור (בהיר, ספיה, כהה)
 function cycleTheme() {
   const themes = ['light','sepia','dark'];
   S.theme = themes[(themes.indexOf(S.theme) + 1) % themes.length];
@@ -638,6 +649,7 @@ function cycleTheme() {
 }
 
 // ═══ LIBRARY ═══
+// מרנדר את ממשק הספרייה הראשי כולל כפתורי ניווט ובקרות
 function renderLib() {
   const tabLabels = { books:'📚 ספרים', shelves:'🗄 מדפים', series:'📖 סדרות', dictionary:'📒 מילון' };
   const isBooks = S.libTab === 'books';
@@ -674,11 +686,13 @@ function renderLib() {
   renderTabContent();
 }
 
+// מחליף את הלשונית הפעילה בספרייה
 function switchTab(tab) {
   S.libTab = tab;
   renderLib();
 }
 
+// מרנדר את תוכן הלשונית הפעילה בתוך אזור התוכן
 function renderTabContent() {
   const el = $id('libContent');
   if (!el) return;
@@ -689,15 +703,18 @@ function renderTabContent() {
 }
 
 // ═══ FIELD UTILS ═══
+// מפצל שדה טקסט מופרד בנקודה-פסיק לרשימת ערכים
 function splitField(val) {
   if (!val?.trim()) return [];
   return val.split(';').map(s => s.trim()).filter(Boolean);
 }
+// בונה HTML של תגיות עבור רשימת ערכים
 function fchips(vals, cls) {
   return vals.length ? `<div class="fchips">${vals.map(v=>`<span class="fchip ${cls}">${esc(v)}</span>`).join('')}</div>` : '';
 }
 
 // ═══ NAV DRAWER ═══
+// פותח את תפריט הניווט הצדדי ומציג קישורי לשוניות
 function openNav() {
   const tabs = [['books','📚 ספרים'],['shelves','🗄 מדפים'],['series','📖 סדרות'],['dictionary','📒 מילון']];
   $id('navLinks').innerHTML = tabs.map(([t,l]) =>
@@ -713,12 +730,14 @@ function openNav() {
   $id('navDrawer').classList.add('open');
   $id('navOverlay').classList.add('open');
 }
+// סוגר את תפריט הניווט הצדדי
 function closeNav() {
   $id('navDrawer')?.classList.remove('open');
   $id('navOverlay')?.classList.remove('open');
 }
 
 // ═══ GROUP VIEW ═══
+// מרנדר ספרים מקובצים לפי שדה הקיבוץ הנוכחי
 function renderGroupedBooks(books) {
   const gf = S.libGroupBy;
   const groups = new Map();
@@ -745,6 +764,7 @@ function renderGroupedBooks(books) {
     </div>`).join('');
 }
 
+// מחזיר רשימת שמות שדות חסרים בספר נתון
 function missingFields(b) {
   const missing = [];
   if (!b.author?.trim())    missing.push('מחבר');
@@ -755,6 +775,7 @@ function missingFields(b) {
   return missing;
 }
 
+// מחזיר את רשימת הספרים לאחר סינון ומיון לפי הגדרות המשתמש
 function getSortedBooks() {
   let books = [...S.books];
   if (S.libSearch) {
@@ -783,12 +804,14 @@ function getSortedBooks() {
   return books;
 }
 
+// מחזיר את אחוז ההתקדמות בקריאת ספר
 function getProgress(book) {
   if (!book.totalPages) return 0;
   if (book.format === 'epub' && book.epubScrollPct != null) return book.epubScrollPct;
   return Math.round(((book.currentPage||1) / book.totalPages) * 100);
 }
 
+// מרנדר פאנל סטטיסטיקות ומידע על שלמות נתוני הספרים
 function renderInfoPanel() {
   const total = S.books.length;
   if (!total) return '';
@@ -818,6 +841,7 @@ function renderInfoPanel() {
   </div>`;
 }
 
+// מרנדר סרגל בחירה מרובה לפעולות על ספרים מסומנים
 function renderSelectBar(visibleBooks) {
   if (!S.libSelectMode) return '';
   const n = S.libSelected.size;
@@ -833,6 +857,7 @@ function renderSelectBar(visibleBooks) {
   </div>`;
 }
 
+// מרנדר את לשונית הספרים עם רשימה או גריד של ספרים
 function renderBooksTab() {
   const panel = renderInfoPanel();
   const books = getSortedBooks();
@@ -855,6 +880,7 @@ function renderBooksTab() {
   return panel + listHtml + renderSelectBar(books);
 }
 
+// מחזיר HTML של כריכת ספר או תחליף צבעוני אם אין כריכה
 function bookCoverHtml(book, cls) {
   if (book.coverUrl) {
     return `<img src="${esc(book.coverUrl)}" class="${cls}" alt=""
@@ -866,6 +892,7 @@ function bookCoverHtml(book, cls) {
   return `<div class="${cls} cover-placeholder" style="background:${col}">${(book.title||'?')[0]}</div>`;
 }
 
+// מחזיר HTML של כרטיס ספר בתצוגת רשימה
 function bookListCard(book) {
   const pct = getProgress(book);
   const sel = S.libSelectMode;
@@ -902,6 +929,7 @@ function bookListCard(book) {
   </div>`;
 }
 
+// מחזיר HTML של כרטיס ספר בתצוגת גריד
 function bookGridCard(book) {
   const pct = getProgress(book);
   const sel = S.libSelectMode;
@@ -928,6 +956,7 @@ function bookGridCard(book) {
   </div>`;
 }
 
+// מרנדר את לשונית המדפים עם כל המדפים וספריהם
 function renderShelvesTab() {
   if (!S.shelves.length) return `<div class="empty-state">
     <div style="font-size:3rem">🗄</div><p>אין מדפים עדיין</p>
@@ -957,6 +986,7 @@ function renderShelvesTab() {
   </div><div class="shelf-grid">${cards}</div>`;
 }
 
+// מרנדר את לשונית הסדרות עם כל הסדרות והספרים שבהן
 function renderSeriesTab() {
   if (!S.seriesList.length) return `<div class="empty-state">
     <div style="font-size:3rem">📖</div><p>אין סדרות עדיין</p>
@@ -986,6 +1016,7 @@ function renderSeriesTab() {
   <div class="shelf-grid">${cards}</div>`;
 }
 
+// מרנדר את לשונית המילון הגלובלי עם כל ערכי המילון
 function renderGlobalDictTab() {
   const catLabels = { word:'מילה', character:'דמות', concept:'מושג' };
   const catColors = { word:'#5c3d2e', character:'#2d6a4f', concept:'#1d3557' };
@@ -1015,9 +1046,12 @@ function renderGlobalDictTab() {
 }
 
 // ═══ ADD BOOK ═══
+// מציג את חלון ההוספה של ספר חדש
 function showAddModal() { $id('addModal').style.display='flex'; }
+// סוגר את חלון הוספת הספר
 function closeAddModal() { $id('addModal').style.display='none'; }
 
+// מטפל בקבצי PDF ו-EPUB שנבחרו ומוסיף אותם לספרייה
 async function handleFiles(files) {
   closeAddModal();
   const arr = Array.from(files);
@@ -1090,6 +1124,7 @@ async function handleFiles(files) {
   if (skipped) showToast(`${skipped} ספר${skipped>1?'ים':''} כבר קיים${skipped>1?'ים':''} בספרייה`);
 }
 
+// פותח בורר תיקיות וסורק רקורסיבית אחר קבצי ספרים
 async function openFolder() {
   if (!window.showDirectoryPicker) return alert('תכונה זו זמינה רק ב-Chrome/Edge');
   try {
@@ -1113,6 +1148,7 @@ async function openFolder() {
 // ═══ EDIT BOOK ═══
 let _customFieldCounter = 0;
 
+// פותח את חלון עריכת פרטי הספר ומאכלס אותו בנתוני הספר הנוכחי
 function editBook(bookId) {
   const book = S.books.find(b => b.id === bookId);
   if (!book) return;
@@ -1168,6 +1204,7 @@ function editBook(bookId) {
   $id('editModal').style.display = 'flex';
 }
 
+// מוסיף שורת שדה מותאם אישית חדשה לטופס עריכת הספר
 function addCustomField() {
   const div = document.createElement('div');
   div.className = 'custom-field-row';
@@ -1177,6 +1214,7 @@ function addCustomField() {
   $id('cfContainer').appendChild(div);
 }
 
+// שומר את השינויים בפרטי הספר ומסגר את חלון העריכה
 async function saveEditBook() {
   const id = $id('editBookId').value;
   const book = S.books.find(b => b.id === id);
@@ -1200,6 +1238,7 @@ async function saveEditBook() {
   renderLib();
 }
 
+// מחלץ את עמוד 1 מה-PDF ומגדיר אותו ככריכת הספר
 async function setCoverFromPdf(bookId) {
   const book = S.books.find(b=>b.id===bookId);
   if (!book) return;
@@ -1212,6 +1251,7 @@ async function setCoverFromPdf(bookId) {
   editBook(bookId);
 }
 
+// קורא קובץ תמונה שנבחר ומגדיר אותו ככריכת הספר
 function setCoverFromFile(input, bookId) {
   const file = input.files[0];
   if (!file) return;
@@ -1226,6 +1266,7 @@ function setCoverFromFile(input, bookId) {
   reader.readAsDataURL(file);
 }
 
+// שומר כתובת URL של תמונה ככריכת הספר
 async function setCoverFromUrl(bookId) {
   const url = $id('eCoverUrl').value.trim();
   const book = S.books.find(b=>b.id===bookId);
@@ -1235,6 +1276,7 @@ async function setCoverFromUrl(bookId) {
   editBook(bookId);
 }
 
+// מבקש אישור מהמשתמש ומוחק ספר בודד
 async function confirmDelete(bookId) {
   const book = S.books.find(b=>b.id===bookId);
   if (!book||!confirm(`למחוק את "${book.title}"?`)) return;
@@ -1243,6 +1285,7 @@ async function confirmDelete(bookId) {
   renderLib();
 }
 
+// מוחק ספר ואת כל הנתונים הקשורים אליו ממסד הנתונים
 async function _deleteBookById(bookId) {
   await dbDelete('books', bookId);
   await dbDelete('files', bookId);
@@ -1255,28 +1298,33 @@ async function _deleteBookById(bookId) {
 }
 
 // ═══ BULK SELECT ═══
+// מפעיל או מבטל מצב בחירה מרובה של ספרים
 function toggleSelectMode() {
   S.libSelectMode = !S.libSelectMode;
   S.libSelected = new Set();
   renderLib();
 }
 
+// מוסיף או מסיר ספר מסט הספרים הנבחרים
 function toggleBookSelect(id) {
   if (S.libSelected.has(id)) S.libSelected.delete(id);
   else S.libSelected.add(id);
   renderTabContent();
 }
 
+// בוחר את כל הספרים הגלויים כעת ברשימה
 function selectAllVisible() {
   getSortedBooks().forEach(b => S.libSelected.add(b.id));
   renderTabContent();
 }
 
+// מבטל את הסימון של כל הספרים הנבחרים
 function clearSelection() {
   S.libSelected = new Set();
   renderTabContent();
 }
 
+// מוחק את כל הספרים הנבחרים לאחר אישור המשתמש
 async function deleteSelected() {
   const ids = [...S.libSelected];
   if (!ids.length) return;
@@ -1288,6 +1336,7 @@ async function deleteSelected() {
   renderLib();
 }
 
+// מוחק את כל הספרים בספרייה לאחר אישור המשתמש
 async function deleteLibrary() {
   if (!S.books.length) return;
   if (!confirm(`למחוק את כל ${S.books.length} הספרים בספרייה? פעולה זו אינה הפיכה.`)) return;
@@ -1299,6 +1348,7 @@ async function deleteLibrary() {
 }
 
 // ═══ SHELVES ═══
+// פותח חלון ליצירת מדף חדש ושומר אותו
 async function showShelfModal() {
   const name = prompt('שם המדף:');
   if (!name?.trim()) return;
@@ -1307,6 +1357,7 @@ async function showShelfModal() {
   S.shelves.push(s);
   renderLib();
 }
+// מאפשר שינוי שם מדף קיים
 async function editShelf(id) {
   const s = S.shelves.find(x=>x.id===id);
   const name = prompt('שם חדש:', s?.name||'');
@@ -1315,6 +1366,7 @@ async function editShelf(id) {
   await dbPut('shelves', s);
   renderLib();
 }
+// מוחק מדף ומסיר אותו מכל הספרים המשויכים אליו
 async function deleteShelf(id) {
   if (!confirm('למחוק מדף זה?')) return;
   await dbDelete('shelves', id);
@@ -1325,6 +1377,7 @@ async function deleteShelf(id) {
 }
 
 // ═══ SERIES ═══
+// פותח חלון ליצירת סדרה חדשה ושומר אותה
 async function showSeriesModal() {
   const name = prompt('שם הסדרה:');
   if (!name?.trim()) return;
@@ -1333,6 +1386,7 @@ async function showSeriesModal() {
   S.seriesList.push(s);
   renderLib();
 }
+// מאפשר שינוי שם סדרה קיימת
 async function editSeries(id) {
   const s = S.seriesList.find(x=>x.id===id);
   const name = prompt('שם חדש:', s?.name||'');
@@ -1341,6 +1395,7 @@ async function editSeries(id) {
   await dbPut('series', s);
   renderLib();
 }
+// מוחק סדרה ומסירה מכל הספרים המשויכים אליה
 async function deleteSeries(id) {
   if (!confirm('למחוק סדרה זו?')) return;
   await dbDelete('series', id);
@@ -1352,6 +1407,7 @@ async function deleteSeries(id) {
 
 // ═══ TOAST ═══
 let _toastTimer = null;
+// מציג הודעת Toast זמנית בתחתית המסך
 function showToast(msg) {
   const el = $id('toastEl');
   if (!el) return;
@@ -1365,6 +1421,7 @@ function showToast(msg) {
 let _bookPickerType = null; // 'shelf' or 'series'
 let _bookPickerTargetId = null;
 
+// פותח חלון בחירת ספרים לשיוך למדף או לסדרה
 function showBookPicker(type, targetId) {
   _bookPickerType = type;
   _bookPickerTargetId = targetId;
@@ -1388,6 +1445,7 @@ function showBookPicker(type, targetId) {
   $id('bookPickerModal').style.display = 'flex';
 }
 
+// שומר את השיוך של הספרים שנבחרו למדף או לסדרה
 async function saveBookPicker() {
   if (!_bookPickerType || !_bookPickerTargetId) return;
   const field = _bookPickerType === 'shelf' ? 'shelves' : 'series';
@@ -1408,6 +1466,7 @@ async function saveBookPicker() {
 }
 
 // ═══ OPEN BOOK ═══
+// טוען ספר ממסד הנתונים ופותח אותו בממשק הקורא
 async function openBook(bookId) {
   const book = S.books.find(b=>b.id===bookId);
   if (!book) return;
@@ -1437,6 +1496,7 @@ async function openBook(bookId) {
   else if (book.format === 'epub') await initEpub(S.currentBook._fileData);
 }
 
+// סוגר את הקורא וחוזר לתצוגת הספרייה
 function closeReader() {
   clearTimerInterval();
   if (S._pdfObserver) { S._pdfObserver.disconnect(); S._pdfObserver = null; }
@@ -1449,6 +1509,7 @@ function closeReader() {
   renderLib();
 }
 
+// מרנדר את ממשק הקורא כולל כותרת, תוכן ופאנל צדדי
 function renderReaderUI() {
   const book = S.currentBook;
   $id('readerPage').innerHTML = `
@@ -1486,6 +1547,7 @@ function renderReaderUI() {
   switchPanel(S.readerPanel);
 }
 
+// מחליף את הפאנל הפעיל בסרגל הצדדי של הקורא
 function switchPanel(panel) {
   S.readerPanel = panel;
   document.querySelectorAll('.stab').forEach(b => {
@@ -1502,6 +1564,7 @@ function switchPanel(panel) {
 }
 
 // ═══ TIMER ═══
+// מרנדר את פאנל הטיימר עם שעון עגול ובקרות פומודורו
 function renderTimerPanel() {
   const totalSec = S.timerMin * 60 + S.timerSec;
   const origTotal = (S.timerRunning || totalSec < S.timerTotal) ? S.timerTotal : totalSec;
@@ -1535,6 +1598,7 @@ function renderTimerPanel() {
   </div>`;
 }
 
+// מתחיל את הספירה לאחור של טיימר הפוקוס
 function startTimer() {
   if (S.timerRunning) return;
   if (S.timerMin === 0 && S.timerSec === 0) return;
@@ -1554,16 +1618,20 @@ function startTimer() {
   }, 1000);
   switchPanel('timer');
 }
+// עוצר את הטיימר הפעיל מבלי לאפס אותו
 function pauseTimer() { clearTimerInterval(); S.timerRunning = false; switchPanel('timer'); }
+// מאפס את הטיימר לזמן ההתחלתי
 function resetTimer() {
   clearTimerInterval(); S.timerRunning = false;
   S.timerMin = Math.round(S.timerTotal / 60) || 25;
   S.timerSec = 0;
   switchPanel('timer');
 }
+// מבטל את interval הטיימר הפעיל אם קיים
 function clearTimerInterval() { if (S.timerInterval) { clearInterval(S.timerInterval); S.timerInterval = null; } }
 
 // ═══ NOTES PANEL ═══
+// מרנדר את פאנל ההערות עם כל ההערות לספר הנוכחי
 function renderNotesPanel() {
   const typeColors = { quote:'#5c3d2e', insight:'#2d6a4f', question:'#1d3557', summary:'#6d2b3d' };
   const typeLabels = { quote:'ציטוט', insight:'תובנה', question:'שאלה', summary:'סיכום' };
@@ -1586,6 +1654,7 @@ function renderNotesPanel() {
   </div>`;
 }
 
+// פותח את חלון הוספת הערה חדשה עם אפשרות לשיוך לטקסט נבחר
 function showNoteModal(useSelection) {
   const anchor = useSelection ? S.pendingSelText : '';
   $id('noteModalContent').innerHTML = `
@@ -1610,6 +1679,7 @@ function showNoteModal(useSelection) {
   setTimeout(() => $id('noteText')?.focus(), 50);
 }
 
+// שומר הערה חדשה למסד הנתונים ומרענן את פאנל ההערות
 async function saveNote() {
   const text = $id('noteText').value.trim();
   if (!text) return;
@@ -1627,6 +1697,7 @@ async function saveNote() {
   if (S.readerPanel === 'notes') switchPanel('notes');
 }
 
+// מוחק הערה לאחר אישור המשתמש
 async function deleteNote(id) {
   if (!confirm('למחוק הערה זו?')) return;
   await dbDelete('annotations', id);
@@ -1635,6 +1706,7 @@ async function deleteNote(id) {
 }
 
 // ═══ DICT PANEL ═══
+// מרנדר את פאנל המילון עם ערכי המילון לספר הנוכחי
 function renderDictPanel() {
   const catLabels = { word:'מילה', character:'דמות', concept:'מושג' };
   const catColors = { word:'#5c3d2e', character:'#2d6a4f', concept:'#1d3557' };
@@ -1656,6 +1728,7 @@ function renderDictPanel() {
   </div>`;
 }
 
+// פותח את חלון הוספת ערך מילון חדש עם אפשרות למונח נבחר
 function showDictModal(useSelection) {
   const term = useSelection ? S.pendingSelText.trim().slice(0,100) : '';
   $id('noteModalContent').innerHTML = `
@@ -1680,6 +1753,7 @@ function showDictModal(useSelection) {
   setTimeout(() => $id('dictTerm')?.focus(), 50);
 }
 
+// שומר ערך מילון חדש למסד הנתונים ומרענן את הפאנל
 async function saveDictEntry() {
   const term = $id('dictTerm').value.trim();
   if (!term) return;
@@ -1697,6 +1771,7 @@ async function saveDictEntry() {
   if (S.readerPanel === 'dict') switchPanel('dict');
 }
 
+// מוחק ערך מילון ומרענן את המצג
 async function deleteDictEntry(id) {
   await dbDelete('dictionary', id);
   S.dictionary = S.dictionary.filter(e=>e.id!==id);
@@ -1705,6 +1780,7 @@ async function deleteDictEntry(id) {
 }
 
 // ═══ SETTINGS PANEL ═══
+// מרנדר את פאנל ההגדרות עם בקרות גופן וערכת צבעים
 function renderSettingsPanel() {
   return `<div class="settings-panel">
     <div class="setting-row">
@@ -1722,12 +1798,14 @@ function renderSettingsPanel() {
     </div>
   </div>`;
 }
+// מחיל את גודל הגופן הנוכחי על תוכן ה-EPUB
 function applyEpubFontSize() {
   const el = $id('epubContent');
   if (el) el.style.fontSize = S.fontSize + 'px';
 }
 
 // ═══ PDF READER ═══
+// טוען מסמך PDF ומאתחל את תצוגת הקריאה הרציפה
 async function initPdf(data) {
   const loadingEl = $id('loadingMsg');
   try {
@@ -1806,6 +1884,7 @@ async function renderPageIntoWrapper(pageNum, wrapper) {
   wrapper.appendChild(textLayer);
 }
 
+// מגדיר תצוגת PDF רציפה עם טעינה עצלה ושמירת מיקום גלילה
 async function setupPdfContinuous() {
   if (S._pdfObserver) { S._pdfObserver.disconnect(); S._pdfObserver = null; }
   const numPages = S.pdfDoc.numPages;
@@ -1871,6 +1950,7 @@ async function setupPdfContinuous() {
   setupTextSelect($id('pdfContainer'));
 }
 
+// מעדכן את מספר העמוד והתקדמות הקריאה בעת גלילה ב-PDF
 function onPdfScroll() {
   if (!S.pdfDoc) return;
   const rm = $id('readerMain');
@@ -1909,6 +1989,7 @@ function onPdfScroll() {
 }
 
 // ═══ EPUB READER ═══
+// טוען קובץ EPUB, מפרש את מבנהו ומציג את התוכן
 async function initEpub(data) {
   const loadingEl = $id('loadingMsg');
   try {
@@ -2033,6 +2114,7 @@ async function initEpub(data) {
   }
 }
 
+// גולל לפרק EPUB לפי אינדקס בתצוגה הרציפה
 function renderEpubChapter(idx) {
   if (!S.epubChapters.length) return;
   idx = Math.max(0, Math.min(idx, S.epubChapters.length - 1));
@@ -2042,6 +2124,7 @@ function renderEpubChapter(idx) {
   if (chDiv) chDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// פותר נתיב יחסי של קובץ EPUB לנתיב מלא
 function resolveEpubPath(base, relative) {
   if (!relative || relative.startsWith('http')) return relative;
   if (relative.startsWith('/')) return relative.slice(1);
@@ -2054,6 +2137,7 @@ function resolveEpubPath(base, relative) {
 }
 
 // ═══ NAVIGATION ═══
+// עובר לעמוד או לפרק הבא בקורא
 async function nextPage() {
   if (S.pdfDoc) {
     if (S.currentPage < S.pdfDoc.numPages) await renderPdfPage(S.currentPage + 1);
@@ -2061,6 +2145,7 @@ async function nextPage() {
     renderEpubChapter(S.epubChapterIdx + 1);
   }
 }
+// חוזר לעמוד או לפרק הקודם בקורא
 async function prevPage() {
   if (S.pdfDoc) {
     if (S.currentPage > 1) await renderPdfPage(S.currentPage - 1);
@@ -2069,6 +2154,7 @@ async function prevPage() {
   }
 }
 
+// מעדכן את תצוגת מספר העמוד ומצב כפתורי הניווט
 function updatePageDisplay() {
   if (S.pdfDoc) {
     const total = S.pdfDoc.numPages;
@@ -2093,6 +2179,7 @@ document.addEventListener('keydown', e => {
 function setupPdfScroll() {}
 
 // ═══ BOOKMARKS & TOC ═══
+// מרנדר את פאנל הסימניות ותוכן העניינים
 function renderBookmarksPanel() {
   return `<div class="notes-panel">
     ${renderTocSection()}
@@ -2102,6 +2189,7 @@ function renderBookmarksPanel() {
   </div>`;
 }
 
+// מרנדר את קטע תוכן העניינים הידני והאוטומטי
 function renderTocSection() {
   const toc = S.currentBook?.toc || [];
   const hasAuto = (S.pdfDoc && S.pdfOutline?.length) || (!S.pdfDoc && S.epubChapters.length);
@@ -2140,6 +2228,7 @@ function renderTocSection() {
     <div class="toc-list">${rows || '<p class="muted" style="text-align:center;padding:8px;font-size:0.8rem">אין תוכן עניינים</p>'}</div>`;
 }
 
+// מחזיר HTML של כרטיסי הסימניות לספר הנוכחי
 function renderBookmarkCards() {
   return (S.bookmarks || []).map(bm => `
     <div class="note-card">
@@ -2151,6 +2240,7 @@ function renderBookmarkCards() {
     </div>`).join('') || '<p class="muted" style="text-align:center;padding:16px">אין סימניות לספר זה</p>';
 }
 
+// קופץ לעמוד או לפרק המשויך לפריט תוכן העניינים
 function jumpToTocItem(id) {
   const item = (S.currentBook?.toc || []).find(t => t.id === id);
   if (!item) return;
@@ -2158,11 +2248,16 @@ function jumpToTocItem(id) {
   else renderEpubChapter(item.page - 1);
 }
 
+// מפעיל מצב הוספת פרק חדש לתוכן העניינים
 function beginAddToc() { S._addingToc = true; S._editingTocId = null; switchPanel('bookmarks'); setTimeout(() => $id('tocNewTitle')?.focus(), 30); }
+// מבטל את הוספת פרק חדש לתוכן העניינים
 function cancelTocAdd() { S._addingToc = false; switchPanel('bookmarks'); }
+// מפעיל מצב עריכת פרק קיים בתוכן העניינים
 function startEditToc(id) { S._editingTocId = id; S._addingToc = false; switchPanel('bookmarks'); setTimeout(() => $id('tocEditTitle')?.focus(), 30); }
+// מבטל את עריכת פרק תוכן העניינים
 function cancelTocEdit() { S._editingTocId = null; switchPanel('bookmarks'); }
 
+// שומר את השינויים בפרק תוכן העניינים שנערך
 async function saveTocEdit(id) {
   const title = $id('tocEditTitle')?.value.trim();
   const page = Math.max(1, parseInt($id('tocEditPage')?.value) || 1);
@@ -2175,6 +2270,7 @@ async function saveTocEdit(id) {
   switchPanel('bookmarks');
 }
 
+// שומר פרק חדש שנוסף לתוכן העניינים
 async function saveNewTocItem() {
   const title = $id('tocNewTitle')?.value.trim();
   const page = Math.max(1, parseInt($id('tocNewPage')?.value) || 1);
@@ -2187,6 +2283,7 @@ async function saveNewTocItem() {
   switchPanel('bookmarks');
 }
 
+// מוחק פרק מתוכן העניינים לאחר אישור
 async function deleteTocItem(id) {
   if (!confirm('למחוק פרק זה?')) return;
   S.currentBook.toc = (S.currentBook.toc || []).filter(t => t.id !== id);
@@ -2194,6 +2291,7 @@ async function deleteTocItem(id) {
   switchPanel('bookmarks');
 }
 
+// מייבא תוכן עניינים אוטומטי מה-PDF outline או מפרקי ה-EPUB
 async function importAutoToc() {
   const items = [];
   if (S.pdfDoc && S.pdfOutline?.length) {
@@ -2221,6 +2319,7 @@ async function importAutoToc() {
   switchPanel('bookmarks');
 }
 
+// מוסיף סימנייה במיקום הנוכחי בקריאה
 async function addBookmark() {
   const label = prompt('תווית לסימנייה (אפשר להשאיר ריק):', '') ?? null;
   if (label === null) return;
@@ -2237,6 +2336,7 @@ async function addBookmark() {
   if (S.readerPanel === 'bookmarks') switchPanel('bookmarks');
 }
 
+// מוחק סימנייה לאחר אישור המשתמש
 async function deleteBookmark(id) {
   if (!confirm('למחוק סימנייה זו?')) return;
   await dbDelete('bookmarks', id);
@@ -2244,6 +2344,7 @@ async function deleteBookmark(id) {
   if (S.readerPanel === 'bookmarks') switchPanel('bookmarks');
 }
 
+// קופץ למיקום השמור של סימנייה בקורא
 function jumpToBookmark(id) {
   const bm = S.bookmarks.find(b => b.id === id);
   if (!bm) return;
@@ -2265,6 +2366,7 @@ function jumpToBookmark(id) {
 let _selFab = null;
 let _selFabSetupDone = false;
 
+// מגדיר מאזיני אירועים לזיהוי בחירת טקסט בקורא
 function setupTextSelect(el) {
   if (!el) return;
   // mouseup covers desktop; selectionchange covers touch / mobile
@@ -2281,6 +2383,7 @@ function setupTextSelect(el) {
   }
 }
 
+// מטפל בסיום בחירת טקסט ומציג כפתור פעולה מהירה
 function _onSelectionEnd() {
   const text = window.getSelection()?.toString().trim();
   if (text && text.length > 1) {
@@ -2292,6 +2395,7 @@ function _onSelectionEnd() {
   }
 }
 
+// מציג כפתור פעולה מרחף מעל הטקסט הנבחר עם אפשרויות הוספה
 function showSelFab() {
   if (_selFab) { _selFab.remove(); _selFab = null; }
   const fab = document.createElement('div');
@@ -2318,6 +2422,7 @@ function showSelFab() {
 }
 
 // ═══ PDF COVER ═══
+// מחלץ את עמוד 1 של PDF כתמונת כריכה בפורמט JPEG
 async function extractPdfCover(data) {
   try {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -2335,6 +2440,7 @@ async function extractPdfCover(data) {
 
 
 // ═══ EPUB META ═══
+// חולץ מטאדאטה של EPUB כגון כותרת, מחבר ושנה מקובץ ה-OPF
 async function extractEpubMeta(zip) {
   try {
     const containerXml = await zip.file('META-INF/container.xml')?.async('string');
@@ -2356,6 +2462,7 @@ async function extractEpubMeta(zip) {
 }
 
 // ═══ EPUB COVER EXTRACTION ═══
+// מחלץ תמונת כריכה מקובץ EPUB ZIP בשיטות שונות
 async function extractEpubCoverFromZip(zip) {
   function toDataUrl(blob) {
     return new Promise(res => { const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsDataURL(blob); });
@@ -2411,6 +2518,7 @@ async function extractEpubCoverFromZip(zip) {
 }
 
 // ═══ EPUB CONTINUOUS SCROLL ═══
+// טוען את כל פרקי ה-EPUB ומרנדר אותם לתצוגה רציפה
 async function loadAllEpubContent() {
   const el = document.getElementById('epubContent');
   if (!el) return;
@@ -2450,6 +2558,7 @@ async function loadAllEpubContent() {
   updateEpubScrollProgress();
 }
 
+// מגדיר מאזין גלילה ל-EPUB ושומר את ההתקדמות אוטומטית
 function setupEpubScroll() {
   const el = document.getElementById('readerMain');
   if (!el) return;
@@ -2467,6 +2576,7 @@ function setupEpubScroll() {
   });
 }
 
+// מחזיר את אחוז הגלילה הנוכחי בתוכן ה-EPUB
 function getEpubScrollPct() {
   const el = document.getElementById('readerMain');
   if (!el) return 0;
@@ -2474,6 +2584,7 @@ function getEpubScrollPct() {
   return total > 0 ? Math.round((el.scrollTop / total) * 100) : 0;
 }
 
+// מעדכן את תצוגת ההתקדמות בראש הדף בעת גלילה ב-EPUB
 function updateEpubScrollProgress() {
   if (S.pdfDoc) return;
   const pct = getEpubScrollPct();
