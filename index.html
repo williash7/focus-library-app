@@ -430,9 +430,10 @@ const S = {
 // ═══ DATABASE ═══
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('FocusLibrary', 4);
+    const r = indexedDB.open('FocusLibrary', 5);
     r.onupgradeneeded = e => {
       const d = e.target.result;
+      const tx = e.target.transaction;
       if (!d.objectStoreNames.contains('books'))
         d.createObjectStore('books', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('annotations')) {
@@ -451,6 +452,25 @@ function openDB() {
         const bm = d.createObjectStore('bookmarks', { keyPath: 'id' });
         bm.createIndex('bookId', 'bookId');
       }
+      // v5: separate file blobs from book metadata so startup doesn't load all binary data
+      if (!d.objectStoreNames.contains('files'))
+        d.createObjectStore('files', { keyPath: 'id' });
+      // migrate existing books: move fileData into the files store
+      if (e.oldVersion < 5 && d.objectStoreNames.contains('books')) {
+        const booksStore = tx.objectStore('books');
+        const filesStore = tx.objectStore('files');
+        booksStore.openCursor().onsuccess = function(ev) {
+          const cursor = ev.target.result;
+          if (!cursor) return;
+          const book = cursor.value;
+          if (book.fileData) {
+            filesStore.put({ id: book.id, data: book.fileData });
+            delete book.fileData;
+            cursor.update(book);
+          }
+          cursor.continue();
+        };
+      }
     };
     r.onsuccess = e => { S.db = e.target.result; res(); };
     r.onerror = rej;
@@ -466,12 +486,24 @@ function dbGetAll(store) {
     r.onerror = rej;
   });
 }
+function dbGet(store, id) {
+  return new Promise((res, rej) => {
+    const r = dbTx(store).get(id);
+    r.onsuccess = () => res(r.result);
+    r.onerror = rej;
+  });
+}
 function dbPut(store, obj) {
   return new Promise((res, rej) => {
     const r = dbTx(store, 'readwrite').put(obj);
     r.onsuccess = () => res(r.result);
     r.onerror = rej;
   });
+}
+// Returns book metadata without the binary file content (safe to store in books store)
+function bookMeta(b) {
+  const { fileData, _fileData, ...meta } = b;
+  return meta;
 }
 function dbDelete(store, id) {
   return new Promise((res, rej) => {
@@ -776,7 +808,7 @@ async function handleFiles(files) {
     const ab = await file.arrayBuffer();
     const book = {
       id: uid(), title: normalizedTitle, author: '',
-      publisher: '', year: '', genre: '', format: ext, fileData: ab,
+      publisher: '', year: '', genre: '', format: ext,
       coverUrl: '', currentPage: 1, totalPages: 0,
       shelves: [], series: [], customFields: {}, dateAdded: Date.now(), lastRead: null,
     };
@@ -796,6 +828,7 @@ async function handleFiles(files) {
         if (cover) book.coverUrl = cover;
       } catch(e) { console.warn('EPUB cover error', e); }
     }
+    await dbPut('files', { id: book.id, data: ab });
     await dbPut('books', book);
     S.books.push(book);
   }
@@ -908,18 +941,20 @@ async function saveEditBook() {
     if (k) cf[k] = v;
   });
   book.customFields = cf;
-  await dbPut('books', book);
+  await dbPut('books', bookMeta(book));
   $id('editModal').style.display = 'none';
   renderLib();
 }
 
 async function setCoverFromPdf(bookId) {
   const book = S.books.find(b=>b.id===bookId);
-  if (!book||!book.fileData) return;
-  const url = await extractPdfCover(book.fileData.slice ? book.fileData.slice(0) : book.fileData);
+  if (!book) return;
+  const fileRecord = await dbGet('files', bookId);
+  if (!fileRecord?.data) return alert('נתוני הספר חסרים.');
+  const url = await extractPdfCover(fileRecord.data.slice ? fileRecord.data.slice(0) : fileRecord.data);
   if (!url) return alert('לא ניתן לחלץ כריכה');
   book.coverUrl = url;
-  await dbPut('books', book);
+  await dbPut('books', bookMeta(book));
   editBook(bookId);
 }
 
@@ -931,7 +966,7 @@ function setCoverFromFile(input, bookId) {
     const book = S.books.find(b=>b.id===bookId);
     if (!book) return;
     book.coverUrl = e.target.result;
-    await dbPut('books', book);
+    await dbPut('books', bookMeta(book));
     editBook(bookId);
   };
   reader.readAsDataURL(file);
@@ -942,7 +977,7 @@ async function setCoverFromUrl(bookId) {
   const book = S.books.find(b=>b.id===bookId);
   if (!book||!url) return;
   book.coverUrl = url;
-  await dbPut('books', book);
+  await dbPut('books', bookMeta(book));
   editBook(bookId);
 }
 
@@ -950,6 +985,7 @@ async function confirmDelete(bookId) {
   const book = S.books.find(b=>b.id===bookId);
   if (!book||!confirm(`למחוק את "${book.title}"?`)) return;
   await dbDelete('books', bookId);
+  await dbDelete('files', bookId);
   S.books = S.books.filter(b=>b.id!==bookId);
   const anns = await dbGetByIndex('annotations','bookId',bookId);
   for (const a of anns) await dbDelete('annotations', a.id);
@@ -980,7 +1016,7 @@ async function deleteShelf(id) {
   await dbDelete('shelves', id);
   S.shelves = S.shelves.filter(s=>s.id!==id);
   S.books.forEach(b => { b.shelves=(b.shelves||[]).filter(x=>x!==id); });
-  for (const b of S.books) await dbPut('books', b);
+  for (const b of S.books) await dbPut('books', bookMeta(b));
   renderLib();
 }
 
@@ -1006,7 +1042,7 @@ async function deleteSeries(id) {
   await dbDelete('series', id);
   S.seriesList = S.seriesList.filter(s=>s.id!==id);
   S.books.forEach(b => { b.series=(b.series||[]).filter(x=>x!==id); });
-  for (const b of S.books) await dbPut('books', b);
+  for (const b of S.books) await dbPut('books', bookMeta(b));
   renderLib();
 }
 
@@ -1061,7 +1097,7 @@ async function saveBookPicker() {
     else b[field] = (b[field] || []).filter(x => x !== _bookPickerTargetId);
     changed.push(b);
   }
-  for (const b of changed) await dbPut('books', b);
+  for (const b of changed) await dbPut('books', bookMeta(b));
   $id('bookPickerModal').style.display = 'none';
   renderLib();
   if (changed.length) showToast(`עודכן: ${changed.length} ספרים`);
@@ -1071,9 +1107,11 @@ async function saveBookPicker() {
 async function openBook(bookId) {
   const book = S.books.find(b=>b.id===bookId);
   if (!book) return;
-  if (!book.fileData) return alert('נתוני הספר חסרים. הוסף את הקובץ מחדש.');
+  const fileRecord = await dbGet('files', bookId);
+  if (!fileRecord?.data) return alert('נתוני הספר חסרים. הוסף את הקובץ מחדש.');
   if (S._pdfObserver) { S._pdfObserver.disconnect(); S._pdfObserver = null; }
   S.currentBook = book;
+  S.currentBook._fileData = fileRecord.data;
   S.currentPage = book.currentPage || 1;
   S.pdfDoc = null;
   S.pdfOutline = [];
@@ -1085,14 +1123,14 @@ async function openBook(bookId) {
   S.dictionary = await dbGetAll('dictionary');
   S.bookmarks = await dbGetByIndex('bookmarks','bookId',bookId);
   book.lastRead = Date.now();
-  await dbPut('books', book);
+  await dbPut('books', bookMeta(book));
 
   $id('libPage').style.display = 'none';
   $id('readerPage').style.display = 'flex';
   renderReaderUI();
 
-  if (book.format === 'pdf') await initPdf(book.fileData);
-  else if (book.format === 'epub') await initEpub(book.fileData);
+  if (book.format === 'pdf') await initPdf(S.currentBook._fileData);
+  else if (book.format === 'epub') await initEpub(S.currentBook._fileData);
 }
 
 function closeReader() {
@@ -1101,6 +1139,7 @@ function closeReader() {
   clearTimeout(S._pdfSaveTimer);
   $id('readerPage').style.display = 'none';
   $id('libPage').style.display = 'flex';
+  if (S.currentBook) S.currentBook._fileData = null;
   S.currentBook = null;
   S.pdfDoc = null;
   renderLib();
@@ -1398,7 +1437,7 @@ async function initPdf(data) {
       disableFontFace: true,
     }).promise;
     S.currentBook.totalPages = S.pdfDoc.numPages;
-    await dbPut('books', S.currentBook);
+    await dbPut('books', bookMeta(S.currentBook));
     const idx = S.books.findIndex(b=>b.id===S.currentBook.id);
     if (idx>=0) S.books[idx].totalPages = S.pdfDoc.numPages;
 
@@ -1561,7 +1600,7 @@ function onPdfScroll() {
     S.currentBook.currentPage = pageNum;
     S.currentBook.pdfScrollFrac = scrollFrac;
     clearTimeout(S._pdfSaveTimer);
-    S._pdfSaveTimer = setTimeout(() => dbPut('books', S.currentBook), 1000);
+    S._pdfSaveTimer = setTimeout(() => dbPut('books', bookMeta(S.currentBook)), 1000);
   }
 }
 
@@ -1580,7 +1619,7 @@ async function initEpub(data) {
           S.currentBook.coverUrl = cover;
           const idx = S.books.findIndex(b => b.id === S.currentBook.id);
           if (idx >= 0) S.books[idx].coverUrl = cover;
-          await dbPut('books', S.currentBook);
+          await dbPut('books', bookMeta(S.currentBook));
         }
       } catch(e) {}
     }
@@ -1658,7 +1697,7 @@ async function initEpub(data) {
     S.epubZip = zip;
     S.epubDir = opfDir;
     S.currentBook.totalPages = S.epubChapters.length;
-    await dbPut('books', S.currentBook);
+    await dbPut('books', bookMeta(S.currentBook));
 
     const epubEl = $id('epubContent');
     epubEl.style.display = 'block';
@@ -1827,7 +1866,7 @@ async function saveTocEdit(id) {
   const item = (S.currentBook.toc || []).find(t => t.id === id);
   if (item) { item.title = title; item.page = page; }
   S.currentBook.toc.sort((a, b) => a.page - b.page);
-  await dbPut('books', S.currentBook);
+  await dbPut('books', bookMeta(S.currentBook));
   S._editingTocId = null;
   switchPanel('bookmarks');
 }
@@ -1839,7 +1878,7 @@ async function saveNewTocItem() {
   if (!S.currentBook.toc) S.currentBook.toc = [];
   S.currentBook.toc.push({ id: uid(), title, page });
   S.currentBook.toc.sort((a, b) => a.page - b.page);
-  await dbPut('books', S.currentBook);
+  await dbPut('books', bookMeta(S.currentBook));
   S._addingToc = false;
   switchPanel('bookmarks');
 }
@@ -1847,7 +1886,7 @@ async function saveNewTocItem() {
 async function deleteTocItem(id) {
   if (!confirm('למחוק פרק זה?')) return;
   S.currentBook.toc = (S.currentBook.toc || []).filter(t => t.id !== id);
-  await dbPut('books', S.currentBook);
+  await dbPut('books', bookMeta(S.currentBook));
   switchPanel('bookmarks');
 }
 
@@ -1874,7 +1913,7 @@ async function importAutoToc() {
   }
   if (!items.length) return;
   S.currentBook.toc = items;
-  await dbPut('books', S.currentBook);
+  await dbPut('books', bookMeta(S.currentBook));
   switchPanel('bookmarks');
 }
 
@@ -2098,7 +2137,7 @@ function setupEpubScroll() {
       if (!S.currentBook || S.pdfDoc) return;
       S.currentBook.epubScrollPct = getEpubScrollPct();
       S.currentBook.currentPage = Math.max(1, Math.round(S.currentBook.epubScrollPct / 100 * S.epubChapters.length));
-      await dbPut('books', S.currentBook);
+      await dbPut('books', bookMeta(S.currentBook));
     }, 800);
   });
 }

@@ -1,4 +1,4 @@
-const CACHE = 'focus-library-v10';
+const CACHE = 'focus-library-v11';
 
 // Pre-cache index.html using a relative URL so it resolves correctly on any
 // base path (localhost OR GitHub Pages /focus-library-app/).
