@@ -691,7 +691,7 @@ function renderTabContent() {
 // ═══ FIELD UTILS ═══
 function splitField(val) {
   if (!val?.trim()) return [];
-  return val.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+  return val.split(';').map(s => s.trim()).filter(Boolean);
 }
 function fchips(vals, cls) {
   return vals.length ? `<div class="fchips">${vals.map(v=>`<span class="fchip ${cls}">${esc(v)}</span>`).join('')}</div>` : '';
