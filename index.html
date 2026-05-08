@@ -128,6 +128,17 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 .fab { padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 20px; cursor: pointer; font-weight: 700; font-size: 0.9rem; box-shadow: 0 2px 8px rgba(212,168,67,0.4); transition: transform 0.15s; }
 .fab:hover { transform: scale(1.05); }
 
+/* ── INFO PANEL ── */
+.info-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px; }
+.info-panel-stats { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.info-stat-total { font-size: 0.9rem; color: var(--text); white-space: nowrap; }
+.info-stat-sep { color: var(--border); font-size: 1rem; }
+.info-panel-breakdown { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.info-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg2); color: var(--muted); cursor: pointer; font-size: 0.8rem; transition: all 0.15s; white-space: nowrap; }
+.info-chip:hover { border-color: var(--primary); color: var(--primary); }
+.info-chip-active { background: var(--chip-color, var(--primary)); color: white !important; border-color: var(--chip-color, var(--primary)) !important; }
+.info-chip-count { font-weight: 700; font-size: 0.75rem; }
+
 /* ── EMPTY STATE ── */
 .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
 .empty-state p { margin: 10px 0; font-size: 1rem; }
@@ -415,7 +426,7 @@ const S = {
   books: [], shelves: [], seriesList: [],
   annotations: [], dictionary: [], bookmarks: [],
   libTab: 'books', libView: 'list', libSort: 'date', libSearch: '',
-  libShelfFilter: null, libSeriesFilter: null,
+  libShelfFilter: null, libSeriesFilter: null, libInfoFilter: null,
   currentBook: null, pdfDoc: null, currentPage: 1, totalPages: 0,
   epubChapters: [], epubChapterIdx: 0, epubZip: null, epubDir: '', epubImages: {},
   pdfOutline: [], _outlineFlat: [], _pdfObserver: null, _pdfSaveTimer: null,
@@ -613,6 +624,16 @@ function renderTabContent() {
   else if (S.libTab === 'dictionary') el.innerHTML = renderGlobalDictTab();
 }
 
+function missingFields(b) {
+  const missing = [];
+  if (!b.author?.trim())    missing.push('מחבר');
+  if (!b.coverUrl?.trim())  missing.push('כריכה');
+  if (!b.publisher?.trim()) missing.push('הוצאה');
+  if (!b.year?.toString().trim()) missing.push('שנה');
+  if (!b.genre?.trim())     missing.push('ז׳אנר');
+  return missing;
+}
+
 function getSortedBooks() {
   let books = [...S.books];
   if (S.libSearch) {
@@ -623,6 +644,12 @@ function getSortedBooks() {
   }
   if (S.libShelfFilter) books = books.filter(b => (b.shelves||[]).includes(S.libShelfFilter));
   if (S.libSeriesFilter) books = books.filter(b => (b.series||[]).includes(S.libSeriesFilter));
+  if (S.libInfoFilter === 'missing') books = books.filter(b => missingFields(b).length > 0);
+  if (S.libInfoFilter === 'complete') books = books.filter(b => missingFields(b).length === 0);
+  if (S.libInfoFilter?.startsWith('missing:')) {
+    const field = S.libInfoFilter.slice(8);
+    books = books.filter(b => missingFields(b).includes(field));
+  }
   books.sort((a,b) => {
     if (S.libSort==='title') return (a.title||'').localeCompare(b.title||'','he');
     if (S.libSort==='author') return (a.author||'').localeCompare(b.author||'','he');
@@ -641,15 +668,49 @@ function getProgress(book) {
   return Math.round(((book.currentPage||1) / book.totalPages) * 100);
 }
 
+function renderInfoPanel() {
+  const total = S.books.length;
+  if (!total) return '';
+  const missingCounts = { 'מחבר': 0, 'כריכה': 0, 'הוצאה': 0, 'שנה': 0, 'ז׳אנר': 0 };
+  let completeCount = 0, missingCount = 0;
+  for (const b of S.books) {
+    const m = missingFields(b);
+    if (m.length === 0) { completeCount++; } else { missingCount++; m.forEach(f => missingCounts[f]++); }
+  }
+  const active = S.libInfoFilter;
+  const chip = (val, label, count, color) =>
+    `<button class="info-chip ${active===val?'info-chip-active':''}" style="${active===val?`--chip-color:${color}`:''}" onclick="S.libInfoFilter=S.libInfoFilter==='${val}'?null:'${val}';renderTabContent()">${label} <span class="info-chip-count">${count}</span></button>`;
+
+  const missingChips = Object.entries(missingCounts)
+    .filter(([,c]) => c > 0)
+    .map(([f,c]) => chip(`missing:${f}`, `חסר ${f}`, c, '#e67e22'))
+    .join('');
+
+  return `<div class="info-panel">
+    <div class="info-panel-stats">
+      <span class="info-stat-total">סה"כ <strong>${total}</strong> ספרים</span>
+      <span class="info-stat-sep">•</span>
+      ${chip('complete','מידע מלא', completeCount, '#27ae60')}
+      ${chip('missing','חסר מידע', missingCount, '#e74c3c')}
+    </div>
+    ${missingChips ? `<div class="info-panel-breakdown">${missingChips}</div>` : ''}
+  </div>`;
+}
+
 function renderBooksTab() {
+  const panel = renderInfoPanel();
   const books = getSortedBooks();
-  if (!books.length) return `<div class="empty-state">
+  if (!books.length && !S.books.length) return panel + `<div class="empty-state">
     <div style="font-size:4rem">📚</div>
     <p>הספרייה ריקה</p>
     <button class="btn-primary" onclick="showAddModal()">הוסף את הספר הראשון</button>
   </div>`;
-  if (S.libView === 'grid') return `<div class="book-grid">${books.map(bookGridCard).join('')}</div>`;
-  return `<div class="book-list">${books.map(bookListCard).join('')}</div>`;
+  const listHtml = !books.length
+    ? `<div class="empty-state"><div style="font-size:3rem">🔍</div><p>אין ספרים התואמים לסינון הנוכחי</p><button class="btn-secondary" onclick="S.libInfoFilter=null;renderTabContent()">הסר סינון</button></div>`
+    : S.libView === 'grid'
+      ? `<div class="book-grid">${books.map(bookGridCard).join('')}</div>`
+      : `<div class="book-list">${books.map(bookListCard).join('')}</div>`;
+  return panel + listHtml;
 }
 
 function bookCoverHtml(book, cls) {
