@@ -486,7 +486,7 @@ const S = {
   annotations: [], dictionary: [], bookmarks: [],
   libTab: 'books', libView: 'list', libSort: 'date', libSearch: '',
   libShelfFilter: null, libSeriesFilter: null, libInfoFilter: null,
-  libGroupBy: null,
+  libGroupBy: null, libInfoBreakdownOpen: false,
   libSelectMode: false, libSelected: new Set(),
   currentBook: null, pdfDoc: null, currentPage: 1, totalPages: 0,
   epubChapters: [], epubChapterIdx: 0, epubZip: null, epubDir: '', epubImages: {},
@@ -830,14 +830,16 @@ function renderInfoPanel() {
     .map(([f,c]) => chip(`missing:${f}`, `חסר ${f}`, c, '#e67e22'))
     .join('');
 
+  const showBreakdown = S.libInfoBreakdownOpen && missingChips;
   return `<div class="info-panel">
     <div class="info-panel-stats">
       <span class="info-stat-total">סה"כ <strong>${total}</strong> ספרים</span>
       <span class="info-stat-sep">•</span>
       ${chip('complete','מידע מלא', completeCount, '#27ae60')}
       ${chip('missing','חסר מידע', missingCount, '#e74c3c')}
+      ${missingChips ? `<button class="info-chip" style="margin-right:auto" onclick="S.libInfoBreakdownOpen=!S.libInfoBreakdownOpen;renderTabContent()" title="פירוט לפי שדה">${showBreakdown ? '▲' : '▼'} פירוט</button>` : ''}
     </div>
-    ${missingChips ? `<div class="info-panel-breakdown">${missingChips}</div>` : ''}
+    ${showBreakdown ? `<div class="info-panel-breakdown">${missingChips}</div>` : ''}
   </div>`;
 }
 
