@@ -128,6 +128,45 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 .fab { padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 20px; cursor: pointer; font-weight: 700; font-size: 0.9rem; box-shadow: 0 2px 8px rgba(212,168,67,0.4); transition: transform 0.15s; }
 .fab:hover { transform: scale(1.05); }
 
+/* ── NAV DRAWER ── */
+.nav-drawer { position:fixed; top:0; right:-310px; width:290px; height:100vh; background:var(--card); box-shadow:-3px 0 24px rgba(0,0,0,0.18); z-index:500; transition:right 0.25s ease; display:flex; flex-direction:column; }
+.nav-drawer.open { right:0; }
+.nav-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:499; opacity:0; pointer-events:none; transition:opacity 0.25s; }
+.nav-overlay.open { opacity:1; pointer-events:all; }
+.nav-drawer-header { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+.nav-drawer-title { font-weight:700; font-size:1rem; color:var(--primary); }
+.nav-links { flex:1; overflow-y:auto; padding:8px 0; }
+.nav-item { display:flex; align-items:center; gap:10px; width:100%; padding:11px 16px; background:none; border:none; color:var(--text); font-size:0.95rem; cursor:pointer; text-align:right; transition:background 0.15s; }
+.nav-item:hover { background:var(--bg2); }
+.nav-item.active { background:var(--bg2); color:var(--primary); font-weight:700; border-right:3px solid var(--primary); }
+.nav-divider { height:1px; background:var(--border); margin:8px 16px; }
+.nav-drawer-footer { padding:12px 16px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:6px; flex-shrink:0; }
+.nav-theme-row { display:flex; gap:6px; }
+.nav-theme-btn { flex:1; padding:5px 0; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:0.8rem; transition:all 0.15s; }
+.nav-theme-btn.active { background:var(--primary); color:white; border-color:var(--primary); }
+.nav-danger { color:#e74c3c !important; }
+
+/* ── MINIMAL HEADER ── */
+.lib-header-min { background:var(--card); border-bottom:1px solid var(--border); padding:10px 14px; display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.lib-tab-title { flex:1; font-size:1.05rem; font-weight:700; color:var(--primary); }
+.lib-controls-bar { padding:8px 14px; background:var(--card); border-bottom:1px solid var(--border); display:flex; gap:6px; align-items:center; flex-wrap:wrap; flex-shrink:0; }
+
+/* ── GROUP VIEW ── */
+.group-section { margin-bottom:20px; }
+.group-header { display:flex; align-items:center; justify-content:space-between; padding:6px 0 5px; border-bottom:2px solid var(--accent); margin-bottom:10px; }
+.group-name { font-weight:700; font-size:0.95rem; color:var(--primary); }
+.group-count { font-size:0.75rem; color:var(--muted); background:var(--bg2); padding:1px 8px; border-radius:10px; }
+
+/* ── FIELD CHIPS (multi-value) ── */
+.fchips { display:flex; gap:3px; flex-wrap:wrap; margin:2px 0; }
+.fchip { font-size:0.7rem; padding:1px 8px; border-radius:9px; white-space:nowrap; }
+.fchip-author { background:#f0e8e0; color:#5c3d2e; }
+.fchip-pub    { background:#dce8f0; color:#1d3557; }
+.fchip-genre  { background:#dceee6; color:#2d6a4f; }
+[data-theme="dark"] .fchip-author { background:#3d2820; color:#c8956a; }
+[data-theme="dark"] .fchip-pub    { background:#1a2535; color:#5d9ac7; }
+[data-theme="dark"] .fchip-genre  { background:#1a2e26; color:#5db88a; }
+
 /* ── BULK SELECT ── */
 .book-card-list.book-card-selected, .book-card-grid.book-card-selected { outline: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
 .book-select-cb { width: 18px; height: 18px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
@@ -315,6 +354,17 @@ textarea { resize: vertical; min-height: 80px; }
 <!-- LIBRARY PAGE -->
 <div id="libPage"></div>
 
+<!-- NAV DRAWER -->
+<div id="navDrawer" class="nav-drawer">
+  <div class="nav-drawer-header">
+    <span class="nav-drawer-title">📚 ספריית הפוקוס</span>
+    <button class="icon-btn" onclick="closeNav()">✕</button>
+  </div>
+  <nav id="navLinks" class="nav-links"></nav>
+  <div id="navFooter" class="nav-drawer-footer"></div>
+</div>
+<div id="navOverlay" class="nav-overlay" onclick="closeNav()"></div>
+
 <!-- READER PAGE -->
 <div id="readerPage"></div>
 
@@ -436,6 +486,7 @@ const S = {
   annotations: [], dictionary: [], bookmarks: [],
   libTab: 'books', libView: 'list', libSort: 'date', libSearch: '',
   libShelfFilter: null, libSeriesFilter: null, libInfoFilter: null,
+  libGroupBy: null,
   libSelectMode: false, libSelected: new Set(),
   currentBook: null, pdfDoc: null, currentPage: 1, totalPages: 0,
   epubChapters: [], epubChapterIdx: 0, epubZip: null, epubDir: '', epubImages: {},
@@ -589,39 +640,37 @@ function cycleTheme() {
 // ═══ LIBRARY ═══
 function renderLib() {
   const tabLabels = { books:'📚 ספרים', shelves:'🗄 מדפים', series:'📖 סדרות', dictionary:'📒 מילון' };
-  const tabHtml = Object.entries(tabLabels).map(([t,l]) =>
-    `<button class="tab-btn ${S.libTab===t?'active':''}" onclick="switchTab('${t}')">${l}</button>`
-  ).join('');
+  const isBooks = S.libTab === 'books';
 
   const sortOpts = [
     ['date','תאריך הוספה'],['title','שם'],['author','מחבר'],
     ['year','שנה'],['publisher','הוצאה לאור'],['format','פורמט'],['progress','התקדמות']
   ].map(([v,l]) => `<option value="${v}" ${S.libSort===v?'selected':''}>${l}</option>`).join('');
 
-  const controlsHtml = S.libTab !== 'books' ? '' : `
-  <div class="lib-controls">
-    <input type="search" id="libSearch" placeholder="🔍 חיפוש..." value="${esc(S.libSearch)}"
-      oninput="S.libSearch=this.value;renderTabContent()" class="search-input">
-    <select onchange="S.libSort=this.value;renderTabContent()" class="sort-select">${sortOpts}</select>
+  const groupOpts = [
+    ['','ללא קיבוץ'],['author','לפי מחבר'],['year','לפי שנה'],
+    ['genre','לפי ז׳אנר'],['publisher','לפי הוצאה']
+  ].map(([v,l]) => `<option value="${v}" ${(S.libGroupBy||'')===v?'selected':''}>${l}</option>`).join('');
+
+  const controlsBar = !isBooks ? '' : `
+  <div class="lib-controls-bar">
+    <input type="search" class="search-input" style="flex:1;min-width:100px" placeholder="🔍 חיפוש..."
+      value="${esc(S.libSearch)}" oninput="S.libSearch=this.value;renderTabContent()">
+    <select class="sort-select" onchange="S.libSort=this.value;renderTabContent()">${sortOpts}</select>
+    <select class="sort-select" onchange="S.libGroupBy=this.value||null;renderTabContent()">${groupOpts}</select>
     <button class="view-btn ${S.libView==='list'?'active':''}" onclick="S.libView='list';renderLib()" title="רשימה">≡</button>
     <button class="view-btn ${S.libView==='grid'?'active':''}" onclick="S.libView='grid';renderLib()" title="גריד">⊞</button>
     <button class="view-btn ${S.libSelectMode?'active':''}" onclick="toggleSelectMode()" title="בחר ספרים">☑</button>
   </div>`;
 
-  const dangerBtn = S.libTab === 'books' && S.books.length
-    ? `<button class="btn-secondary" style="color:#e74c3c;border-color:#e74c3c;font-size:0.8rem;padding:5px 10px" onclick="deleteLibrary()" title="מחק את כל הספרייה">🗑 ספרייה</button>`
-    : '';
-
   $id('libPage').innerHTML = `
-  <div class="lib-header">
-    <div class="lib-title-row">
-      <h1>📚 ספריית הפוקוס</h1>
-      <div style="display:flex;gap:8px;align-items:center">${dangerBtn}<button class="fab" onclick="showAddModal()">+ הוסף ספר</button></div>
-    </div>
-    <div class="lib-tabs">${tabHtml}</div>
-    ${controlsHtml}
+  <div class="lib-header-min">
+    <button class="icon-btn" onclick="openNav()" title="תפריט" style="font-size:1.2rem">☰</button>
+    <span class="lib-tab-title">${tabLabels[S.libTab]||''}</span>
+    ${isBooks ? `<button class="icon-btn" onclick="showAddModal()" title="הוסף ספר" style="font-size:1.3rem;font-weight:700;color:var(--accent)">+</button>` : ''}
   </div>
-  <div id="libContent"></div>`;
+  ${controlsBar}
+  <div id="libContent" style="flex:1;overflow-y:auto;padding:16px"></div>`;
   renderTabContent();
 }
 
@@ -637,6 +686,63 @@ function renderTabContent() {
   else if (S.libTab === 'shelves') el.innerHTML = renderShelvesTab();
   else if (S.libTab === 'series') el.innerHTML = renderSeriesTab();
   else if (S.libTab === 'dictionary') el.innerHTML = renderGlobalDictTab();
+}
+
+// ═══ FIELD UTILS ═══
+function splitField(val) {
+  if (!val?.trim()) return [];
+  return val.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+}
+function fchips(vals, cls) {
+  return vals.length ? `<div class="fchips">${vals.map(v=>`<span class="fchip ${cls}">${esc(v)}</span>`).join('')}</div>` : '';
+}
+
+// ═══ NAV DRAWER ═══
+function openNav() {
+  const tabs = [['books','📚 ספרים'],['shelves','🗄 מדפים'],['series','📖 סדרות'],['dictionary','📒 מילון']];
+  $id('navLinks').innerHTML = tabs.map(([t,l]) =>
+    `<button class="nav-item ${S.libTab===t?'active':''}" onclick="switchTab('${t}');closeNav()">${l}</button>`
+  ).join('') + `<div class="nav-divider"></div>
+    <button class="nav-item" onclick="closeNav();showAddModal()">＋ הוסף ספר</button>`;
+  const themes = [['light','☀️'],['sepia','📜'],['dark','🌙']];
+  $id('navFooter').innerHTML = `<div class="nav-theme-row">
+    ${themes.map(([t,l])=>`<button class="nav-theme-btn ${S.theme===t?'active':''}" onclick="S.theme='${t}';localStorage.setItem('theme','${t}');applyTheme();document.querySelectorAll('.nav-theme-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${l}</button>`).join('')}
+  </div>
+  ${S.books.length ? `<div class="nav-divider" style="margin:6px 0"></div>
+    <button class="nav-item nav-danger" style="padding:8px 0" onclick="closeNav();deleteLibrary()">🗑 מחק את כל הספרייה</button>` : ''}`;
+  $id('navDrawer').classList.add('open');
+  $id('navOverlay').classList.add('open');
+}
+function closeNav() {
+  $id('navDrawer')?.classList.remove('open');
+  $id('navOverlay')?.classList.remove('open');
+}
+
+// ═══ GROUP VIEW ═══
+function renderGroupedBooks(books) {
+  const gf = S.libGroupBy;
+  const groups = new Map();
+  for (const book of books) {
+    let keys = [];
+    if (gf === 'author')    keys = splitField(book.author);
+    else if (gf === 'year') keys = [(book.year||'').trim()];
+    else if (gf === 'genre') keys = splitField(book.genre);
+    else if (gf === 'publisher') keys = splitField(book.publisher);
+    if (!keys.length || (keys.length===1 && !keys[0])) keys = ['ללא'];
+    for (const k of keys) { if (!groups.has(k)) groups.set(k,[]); groups.get(k).push(book); }
+  }
+  let sorted = [...groups.entries()];
+  if (gf === 'year') sorted.sort((a,b) => (b[0]||'0').localeCompare(a[0]||'0'));
+  else sorted.sort((a,b) => { if (a[0]==='ללא') return 1; if (b[0]==='ללא') return -1; return a[0].localeCompare(b[0],'he'); });
+  if (!sorted.length) return `<div class="empty-state"><div style="font-size:3rem">🔍</div><p>אין ספרים</p></div>`;
+  return sorted.map(([name, gbooks]) => `
+    <div class="group-section">
+      <div class="group-header">
+        <span class="group-name">${esc(name)}</span>
+        <span class="group-count">${gbooks.length} ספרים</span>
+      </div>
+      <div class="${S.libView==='grid'?'book-grid':'book-list'}">${gbooks.map(S.libView==='grid'?bookGridCard:bookListCard).join('')}</div>
+    </div>`).join('');
 }
 
 function missingFields(b) {
@@ -735,11 +841,17 @@ function renderBooksTab() {
     <p>הספרייה ריקה</p>
     <button class="btn-primary" onclick="showAddModal()">הוסף את הספר הראשון</button>
   </div>`;
-  const listHtml = !books.length
-    ? `<div class="empty-state"><div style="font-size:3rem">🔍</div><p>אין ספרים התואמים לסינון הנוכחי</p><button class="btn-secondary" onclick="S.libInfoFilter=null;renderTabContent()">הסר סינון</button></div>`
-    : S.libView === 'grid'
-      ? `<div class="book-grid">${books.map(bookGridCard).join('')}</div>`
-      : `<div class="book-list">${books.map(bookListCard).join('')}</div>`;
+  if (!books.length) return panel + `<div class="empty-state"><div style="font-size:3rem">🔍</div>
+    <p>אין ספרים התואמים לסינון הנוכחי</p>
+    <button class="btn-secondary" onclick="S.libInfoFilter=null;renderTabContent()">הסר סינון</button></div>`;
+  let listHtml;
+  if (S.libGroupBy) {
+    listHtml = renderGroupedBooks(books);
+  } else if (S.libView === 'grid') {
+    listHtml = `<div class="book-grid">${books.map(bookGridCard).join('')}</div>`;
+  } else {
+    listHtml = `<div class="book-list">${books.map(bookListCard).join('')}</div>`;
+  }
   return panel + listHtml + renderSelectBar(books);
 }
 
@@ -762,6 +874,15 @@ function bookListCard(book) {
     const s = S.shelves.find(x => x.id === id);
     return s ? `<span class="tag">${esc(s.name)}</span>` : '';
   }).join('');
+  const authors = splitField(book.author);
+  const pubs   = splitField(book.publisher);
+  const genres  = splitField(book.genre);
+  const metaLine = [
+    authors.length ? fchips(authors,'fchip-author') : '',
+    pubs.length    ? fchips(pubs,   'fchip-pub')    : '',
+    genres.length  ? fchips(genres, 'fchip-genre')  : '',
+    book.year      ? `<span class="muted" style="font-size:0.75rem">${esc(book.year)}</span>` : '',
+  ].filter(Boolean).join('');
   return `
   <div class="book-card-list ${checked?'book-card-selected':''}"
        onclick="${sel ? `toggleBookSelect('${book.id}')` : `openBook('${book.id}')`}">
@@ -769,7 +890,7 @@ function bookListCard(book) {
     ${bookCoverHtml(book, 'cover-sm')}
     <div class="book-info">
       <div class="book-title">${esc(book.title || 'ללא כותרת')}</div>
-      <div class="book-meta">${esc(book.author||'')}${book.year?' • '+book.year:''}${book.publisher?' • '+book.publisher:''}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:3px 0">${metaLine}</div>
       <div class="tags-row">${shelfTags}</div>
       <div class="progress-bar-wrap"><div class="progress-bar" style="width:${pct}%"></div></div>
       <div class="progress-label">${pct}%${book.format?' • '+book.format.toUpperCase():''}</div>
@@ -800,7 +921,7 @@ function bookGridCard(book) {
     </div>
     <div class="grid-book-info">
       <div class="book-title">${esc(book.title||'ללא כותרת')}</div>
-      <div class="book-meta">${esc(book.author||'')}</div>
+      <div style="margin:3px 0">${fchips(splitField(book.author),'fchip-author')}</div>
       <div class="progress-bar-wrap"><div class="progress-bar" style="width:${pct}%"></div></div>
       <div class="progress-label">${pct}%</div>
     </div>
