@@ -128,6 +128,15 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 .fab { padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 20px; cursor: pointer; font-weight: 700; font-size: 0.9rem; box-shadow: 0 2px 8px rgba(212,168,67,0.4); transition: transform 0.15s; }
 .fab:hover { transform: scale(1.05); }
 
+/* ── BULK SELECT ── */
+.book-card-list.book-card-selected, .book-card-grid.book-card-selected { outline: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+.book-select-cb { width: 18px; height: 18px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
+.select-bar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--card); border: 1px solid var(--border); border-radius: 28px; box-shadow: 0 4px 20px rgba(0,0,0,0.18); padding: 10px 18px; display: flex; align-items: center; gap: 10px; z-index: 200; white-space: nowrap; }
+.select-bar-count { font-size: 0.9rem; color: var(--text); font-weight: 600; }
+.btn-danger { padding: 7px 16px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: opacity 0.2s; }
+.btn-danger:hover { opacity: 0.85; }
+.btn-danger:disabled { opacity: 0.4; cursor: default; }
+
 /* ── INFO PANEL ── */
 .info-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px; }
 .info-panel-stats { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -427,6 +436,7 @@ const S = {
   annotations: [], dictionary: [], bookmarks: [],
   libTab: 'books', libView: 'list', libSort: 'date', libSearch: '',
   libShelfFilter: null, libSeriesFilter: null, libInfoFilter: null,
+  libSelectMode: false, libSelected: new Set(),
   currentBook: null, pdfDoc: null, currentPage: 1, totalPages: 0,
   epubChapters: [], epubChapterIdx: 0, epubZip: null, epubDir: '', epubImages: {},
   pdfOutline: [], _outlineFlat: [], _pdfObserver: null, _pdfSaveTimer: null,
@@ -595,13 +605,18 @@ function renderLib() {
     <select onchange="S.libSort=this.value;renderTabContent()" class="sort-select">${sortOpts}</select>
     <button class="view-btn ${S.libView==='list'?'active':''}" onclick="S.libView='list';renderLib()" title="רשימה">≡</button>
     <button class="view-btn ${S.libView==='grid'?'active':''}" onclick="S.libView='grid';renderLib()" title="גריד">⊞</button>
+    <button class="view-btn ${S.libSelectMode?'active':''}" onclick="toggleSelectMode()" title="בחר ספרים">☑</button>
   </div>`;
+
+  const dangerBtn = S.libTab === 'books' && S.books.length
+    ? `<button class="btn-secondary" style="color:#e74c3c;border-color:#e74c3c;font-size:0.8rem;padding:5px 10px" onclick="deleteLibrary()" title="מחק את כל הספרייה">🗑 ספרייה</button>`
+    : '';
 
   $id('libPage').innerHTML = `
   <div class="lib-header">
     <div class="lib-title-row">
       <h1>📚 ספריית הפוקוס</h1>
-      <button class="fab" onclick="showAddModal()">+ הוסף ספר</button>
+      <div style="display:flex;gap:8px;align-items:center">${dangerBtn}<button class="fab" onclick="showAddModal()">+ הוסף ספר</button></div>
     </div>
     <div class="lib-tabs">${tabHtml}</div>
     ${controlsHtml}
@@ -697,6 +712,21 @@ function renderInfoPanel() {
   </div>`;
 }
 
+function renderSelectBar(visibleBooks) {
+  if (!S.libSelectMode) return '';
+  const n = S.libSelected.size;
+  const allVisible = visibleBooks.every(b => S.libSelected.has(b.id));
+  return `<div class="select-bar">
+    <span class="select-bar-count">${n ? `נבחרו ${n}` : 'לא נבחרו'}</span>
+    <button class="btn-secondary" style="font-size:0.8rem;padding:5px 10px"
+      onclick="${allVisible ? 'clearSelection()' : 'selectAllVisible()'}">
+      ${allVisible ? 'בטל הכל' : 'בחר הכל'}
+    </button>
+    <button class="btn-danger" ${n ? '' : 'disabled'} onclick="deleteSelected()">🗑 מחק נבחרים (${n})</button>
+    <button class="btn-secondary" style="font-size:0.8rem;padding:5px 10px" onclick="toggleSelectMode()">ביטול</button>
+  </div>`;
+}
+
 function renderBooksTab() {
   const panel = renderInfoPanel();
   const books = getSortedBooks();
@@ -710,7 +740,7 @@ function renderBooksTab() {
     : S.libView === 'grid'
       ? `<div class="book-grid">${books.map(bookGridCard).join('')}</div>`
       : `<div class="book-list">${books.map(bookListCard).join('')}</div>`;
-  return panel + listHtml;
+  return panel + listHtml + renderSelectBar(books);
 }
 
 function bookCoverHtml(book, cls) {
@@ -726,12 +756,16 @@ function bookCoverHtml(book, cls) {
 
 function bookListCard(book) {
   const pct = getProgress(book);
+  const sel = S.libSelectMode;
+  const checked = sel && S.libSelected.has(book.id);
   const shelfTags = (book.shelves||[]).map(id => {
     const s = S.shelves.find(x => x.id === id);
     return s ? `<span class="tag">${esc(s.name)}</span>` : '';
   }).join('');
   return `
-  <div class="book-card-list" onclick="openBook('${book.id}')">
+  <div class="book-card-list ${checked?'book-card-selected':''}"
+       onclick="${sel ? `toggleBookSelect('${book.id}')` : `openBook('${book.id}')`}">
+    ${sel ? `<input type="checkbox" class="book-select-cb" ${checked?'checked':''} onclick="event.stopPropagation();toggleBookSelect('${book.id}')">` : ''}
     ${bookCoverHtml(book, 'cover-sm')}
     <div class="book-info">
       <div class="book-title">${esc(book.title || 'ללא כותרת')}</div>
@@ -740,23 +774,29 @@ function bookListCard(book) {
       <div class="progress-bar-wrap"><div class="progress-bar" style="width:${pct}%"></div></div>
       <div class="progress-label">${pct}%${book.format?' • '+book.format.toUpperCase():''}</div>
     </div>
-    <div class="book-actions" onclick="event.stopPropagation()">
+    ${sel ? '' : `<div class="book-actions" onclick="event.stopPropagation()">
       <button class="icon-btn" onclick="editBook('${book.id}')" title="ערוך">✏️</button>
       <button class="icon-btn" onclick="confirmDelete('${book.id}')" title="מחק">🗑️</button>
-    </div>
+    </div>`}
   </div>`;
 }
 
 function bookGridCard(book) {
   const pct = getProgress(book);
+  const sel = S.libSelectMode;
+  const checked = sel && S.libSelected.has(book.id);
   return `
-  <div class="book-card-grid" onclick="openBook('${book.id}')">
-    <div class="cover-wrap">
+  <div class="book-card-grid ${checked?'book-card-selected':''}"
+       onclick="${sel ? `toggleBookSelect('${book.id}')` : `openBook('${book.id}')`}">
+    <div class="cover-wrap" style="position:relative">
       ${bookCoverHtml(book, 'cover-lg')}
-      <div class="cover-overlay">
-        <button onclick="event.stopPropagation();editBook('${book.id}')" class="overlay-btn">✏️</button>
-        <button onclick="event.stopPropagation();confirmDelete('${book.id}')" class="overlay-btn">🗑️</button>
-      </div>
+      ${sel
+        ? `<div style="position:absolute;top:8px;right:8px"><input type="checkbox" class="book-select-cb" ${checked?'checked':''} onclick="event.stopPropagation();toggleBookSelect('${book.id}')"></div>`
+        : `<div class="cover-overlay">
+            <button onclick="event.stopPropagation();editBook('${book.id}')" class="overlay-btn">✏️</button>
+            <button onclick="event.stopPropagation();confirmDelete('${book.id}')" class="overlay-btn">🗑️</button>
+          </div>`
+      }
     </div>
     <div class="grid-book-info">
       <div class="book-title">${esc(book.title||'ללא כותרת')}</div>
@@ -1045,13 +1085,63 @@ async function setCoverFromUrl(bookId) {
 async function confirmDelete(bookId) {
   const book = S.books.find(b=>b.id===bookId);
   if (!book||!confirm(`למחוק את "${book.title}"?`)) return;
+  await _deleteBookById(bookId);
+  S.books = S.books.filter(b=>b.id!==bookId);
+  renderLib();
+}
+
+async function _deleteBookById(bookId) {
   await dbDelete('books', bookId);
   await dbDelete('files', bookId);
-  S.books = S.books.filter(b=>b.id!==bookId);
   const anns = await dbGetByIndex('annotations','bookId',bookId);
   for (const a of anns) await dbDelete('annotations', a.id);
   const dicts = await dbGetByIndex('dictionary','bookId',bookId);
   for (const d of dicts) await dbDelete('dictionary', d.id);
+  const bms = await dbGetByIndex('bookmarks','bookId',bookId);
+  for (const bm of bms) await dbDelete('bookmarks', bm.id);
+}
+
+// ═══ BULK SELECT ═══
+function toggleSelectMode() {
+  S.libSelectMode = !S.libSelectMode;
+  S.libSelected = new Set();
+  renderLib();
+}
+
+function toggleBookSelect(id) {
+  if (S.libSelected.has(id)) S.libSelected.delete(id);
+  else S.libSelected.add(id);
+  renderTabContent();
+}
+
+function selectAllVisible() {
+  getSortedBooks().forEach(b => S.libSelected.add(b.id));
+  renderTabContent();
+}
+
+function clearSelection() {
+  S.libSelected = new Set();
+  renderTabContent();
+}
+
+async function deleteSelected() {
+  const ids = [...S.libSelected];
+  if (!ids.length) return;
+  if (!confirm(`למחוק ${ids.length} ספרים? פעולה זו אינה הפיכה.`)) return;
+  for (const id of ids) await _deleteBookById(id);
+  S.books = S.books.filter(b => !ids.includes(b.id));
+  S.libSelected = new Set();
+  S.libSelectMode = false;
+  renderLib();
+}
+
+async function deleteLibrary() {
+  if (!S.books.length) return;
+  if (!confirm(`למחוק את כל ${S.books.length} הספרים בספרייה? פעולה זו אינה הפיכה.`)) return;
+  for (const b of S.books) await _deleteBookById(b.id);
+  S.books = [];
+  S.libSelected = new Set();
+  S.libSelectMode = false;
   renderLib();
 }
 
