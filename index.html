@@ -214,6 +214,10 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 .lib-stats-num { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .lib-stats-num .num-val { font-size: 0.9rem; font-weight: 700; color: var(--primary); }
 .lib-stats-num .num-lbl { font-size: 0.65rem; color: var(--muted); }
+.nav-section-label { font-size: 0.7rem; color: var(--muted); padding: 6px 4px 2px; font-weight: 700; letter-spacing: 0.05em; }
+.export-btns-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.export-btn { display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; font-size: 0.82rem; white-space: nowrap; transition: all 0.15s; }
+.export-btn:hover { background: var(--bg2); border-color: var(--primary); color: var(--primary); }
 
 /* ── EMPTY STATE ── */
 .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
@@ -760,6 +764,12 @@ function openNav() {
   $id('navFooter').innerHTML = `<div class="nav-theme-row">
     ${themes.map(([t,l])=>`<button class="nav-theme-btn ${S.theme===t?'active':''}" onclick="S.theme='${t}';localStorage.setItem('theme','${t}');applyTheme();document.querySelectorAll('.nav-theme-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${l}</button>`).join('')}
   </div>
+  <div class="nav-divider" style="margin:6px 0"></div>
+  <div class="nav-section-label">📥 ייצוא</div>
+  <button class="nav-item" onclick="closeNav();exportCatalogCSV()">📋 קטלוג ל-CSV</button>
+  <button class="nav-item" onclick="closeNav();exportCatalogJSON()">💾 גיבוי JSON</button>
+  <button class="nav-item" onclick="closeNav();exportReadingReportCSV()">📊 דוח קריאה CSV</button>
+  <button class="nav-item" onclick="closeNav();openPrintReport()">🖨️ דוח להדפסה / PDF</button>
   ${S.books.length ? `<div class="nav-divider" style="margin:6px 0"></div>
     <button class="nav-item nav-danger" style="padding:8px 0" onclick="closeNav();deleteLibrary()">🗑 מחק את כל הספרייה</button>` : ''}`;
   $id('navDrawer').classList.add('open');
@@ -1929,6 +1939,10 @@ function renderStatsPanel() {
       <div class="chart-bars">${chartBars}</div>
     </div>
     ${noData ? '<p class="muted" style="text-align:center;margin-top:12px">אין נתוני קריאה עדיין</p>' : ''}
+    <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="export-btn" style="flex:1;justify-content:center" onclick="openPrintReport()">🖨️ דוח להדפסה</button>
+      <button class="export-btn" style="flex:1;justify-content:center" onclick="exportReadingReportCSV()">📊 CSV</button>
+    </div>
   </div>`;
 }
 
@@ -1985,6 +1999,11 @@ async function loadAndRenderLibStats() {
     .sort((a, b) => (bookStats[b.id]?.time || 0) - (bookStats[a.id]?.time || 0));
 
   el.innerHTML = `
+  <div class="export-btns-row">
+    <button class="export-btn" onclick="exportReadingReportCSV()">📊 דוח קריאה CSV</button>
+    <button class="export-btn" onclick="exportCatalogCSV()">📋 קטלוג CSV</button>
+    <button class="export-btn" onclick="openPrintReport()">🖨️ דוח להדפסה</button>
+  </div>
   <div class="lib-stats-summary">
     <div class="lib-stat-chip">
       <div class="stat-value">${fmtReadingTime(totalTime)}</div>
@@ -2024,6 +2043,138 @@ async function loadAndRenderLibStats() {
       </div>`;
     }).join('')}
   </div>` : ''}`;
+}
+
+// ═══ EXPORT / DOWNLOAD ═══
+function _downloadFile(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function _csvVal(v) {
+  const s = (v === null || v === undefined) ? '' : String(v);
+  return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g,'""')}"` : s;
+}
+
+function _dateStr(ts) {
+  return ts ? new Date(ts).toLocaleDateString('he-IL') : '';
+}
+
+function exportCatalogCSV() {
+  const BOM = '﻿';
+  const headers = ['שם','מחבר','הוצאה לאור','שנה',"ז'אנר",'פורמט','עמודים','התקדמות %','מדפים','סדרות','תאריך הוספה','קריאה אחרונה'];
+  const rows = S.books.map(b => {
+    const shelfNames = (b.shelves||[]).map(id=>(S.shelves.find(s=>s.id===id)||{}).name||'').filter(Boolean).join('; ');
+    const seriesNames = (b.series||[]).map(id=>(S.series.find(s=>s.id===id)||{}).name||'').filter(Boolean).join('; ');
+    return [b.title,b.author,b.publisher,b.year,b.genre,
+      b.format==='pdf'?'PDF':'EPUB', b.totalPages||'', getProgress(b),
+      shelfNames, seriesNames, _dateStr(b.dateAdded), _dateStr(b.lastRead)
+    ].map(_csvVal).join(',');
+  });
+  const today = new Date().toLocaleDateString('he-IL').replace(/\//g,'-');
+  _downloadFile(BOM + [headers.map(_csvVal).join(','), ...rows].join('\n'),
+    `קטלוג_ספרים_${today}.csv`, 'text/csv;charset=utf-8');
+  showToast('קטלוג הורד בהצלחה ✓');
+}
+
+function exportCatalogJSON() {
+  const data = {
+    exportDate: new Date().toISOString(),
+    appVersion: 6,
+    books: S.books.map(({_fileData, ...b}) => b),
+    shelves: S.shelves,
+    series: S.series
+  };
+  const today = new Date().toLocaleDateString('he-IL').replace(/\//g,'-');
+  _downloadFile(JSON.stringify(data, null, 2),
+    `ספריית_פוקוס_${today}.json`, 'application/json');
+  showToast('גיבוי JSON הורד בהצלחה ✓');
+}
+
+async function exportReadingReportCSV() {
+  const BOM = '﻿';
+  const allSessions = await dbGetAll('readingSessions');
+  const headers = ['שם','מחבר','זמן קריאה (דקות)','פומודורו','ישיבות קריאה','הפרעות','ממוצע לישיבה (דקות)'];
+  const bookStats = {};
+  for (const s of allSessions) {
+    if (!bookStats[s.bookId]) bookStats[s.bookId] = { time:0, pomodoros:0, sessions:0, interruptions:0 };
+    bookStats[s.bookId].time += s.duration||0;
+    bookStats[s.bookId].pomodoros += s.pomodorosCompleted||0;
+    bookStats[s.bookId].sessions++;
+    bookStats[s.bookId].interruptions += s.interruptions||0;
+  }
+  const rows = S.books
+    .filter(b => bookStats[b.id])
+    .sort((a,b) => (bookStats[b.id]?.time||0) - (bookStats[a.id]?.time||0))
+    .map(b => {
+      const st = bookStats[b.id];
+      const mins = Math.round(st.time/60);
+      const avgMins = st.sessions > 0 ? Math.round(st.time/st.sessions/60) : 0;
+      return [b.title,b.author,mins,st.pomodoros,st.sessions,st.interruptions,avgMins].map(_csvVal).join(',');
+    });
+  const today = new Date().toLocaleDateString('he-IL').replace(/\//g,'-');
+  _downloadFile(BOM + [headers.map(_csvVal).join(','), ...rows].join('\n'),
+    `דוח_קריאה_${today}.csv`, 'text/csv;charset=utf-8');
+  showToast('דוח קריאה הורד בהצלחה ✓');
+}
+
+async function openPrintReport() {
+  const allSessions = await dbGetAll('readingSessions');
+  const totalTime = allSessions.reduce((s,r) => s+(r.duration||0), 0);
+  const totalPomodoros = allSessions.reduce((s,r) => s+(r.pomodorosCompleted||0), 0);
+  const bookStats = {};
+  for (const s of allSessions) {
+    if (!bookStats[s.bookId]) bookStats[s.bookId] = { time:0, pomodoros:0, sessions:0 };
+    bookStats[s.bookId].time += s.duration||0;
+    bookStats[s.bookId].pomodoros += s.pomodorosCompleted||0;
+    bookStats[s.bookId].sessions++;
+  }
+  const readRows = S.books
+    .filter(b => bookStats[b.id])
+    .sort((a,b) => (bookStats[b.id]?.time||0) - (bookStats[a.id]?.time||0))
+    .map(b => { const st = bookStats[b.id]; return `<tr><td>${esc(b.title)}</td><td>${esc(b.author||'')}</td><td>${fmtReadingTime(st.time)}</td><td>${st.pomodoros}</td><td>${st.sessions}</td><td>${getProgress(b)}%</td></tr>`; }).join('');
+  const catRows = S.books.map(b => `<tr><td>${esc(b.title)}</td><td>${esc(b.author||'')}</td><td>${esc(b.publisher||'')}</td><td>${b.year||''}</td><td>${esc(b.genre||'')}</td><td>${(b.format||'').toUpperCase()}</td><td>${getProgress(b)}%</td></tr>`).join('');
+  const dateStr = new Date().toLocaleDateString('he-IL', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+  const html = `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8">
+<title>דוח ספריית הפוקוס</title>
+<style>
+  body{font-family:'Segoe UI',Arial,sans-serif;direction:rtl;color:#2c1810;padding:32px;max-width:960px;margin:0 auto}
+  h1{color:#5c3d2e;margin-bottom:4px} h2{color:#5c3d2e;margin-top:32px;border-bottom:2px solid #e8d5c0;padding-bottom:8px}
+  .date{color:#8b6f5a;font-size:0.85rem;margin-bottom:24px}
+  .summary{display:flex;gap:12px;margin:16px 0;flex-wrap:wrap}
+  .chip{background:#f5ede0;border-radius:10px;padding:12px 18px;text-align:center;min-width:100px}
+  .chip-val{font-size:1.5rem;font-weight:700;color:#5c3d2e} .chip-lbl{font-size:0.75rem;color:#8b6f5a}
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:0.88rem}
+  th{background:#5c3d2e;color:#fff;padding:9px 11px;text-align:right;font-weight:600}
+  td{padding:8px 11px;border-bottom:1px solid #e8d5c0}
+  tr:nth-child(even) td{background:#fdf8f0}
+  .no-data{color:#8b6f5a;text-align:center;padding:20px}
+  .print-btn{margin-top:32px;padding:10px 24px;background:#5c3d2e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:1rem}
+  @media print{.print-btn{display:none}}
+</style></head><body>
+<h1>📚 ספריית הפוקוס — דוח</h1>
+<div class="date">הופק: ${dateStr}</div>
+<h2>סיכום</h2>
+<div class="summary">
+  <div class="chip"><div class="chip-val">${S.books.length}</div><div class="chip-lbl">ספרים בספרייה</div></div>
+  <div class="chip"><div class="chip-val">${fmtReadingTime(totalTime)}</div><div class="chip-lbl">זמן קריאה כולל</div></div>
+  <div class="chip"><div class="chip-val">${totalPomodoros}</div><div class="chip-lbl">פומודורו</div></div>
+  <div class="chip"><div class="chip-val">${allSessions.length}</div><div class="chip-lbl">ישיבות קריאה</div></div>
+</div>
+<h2>סטטיסטיקות קריאה לפי ספר</h2>
+<table><thead><tr><th>שם</th><th>מחבר</th><th>זמן קריאה</th><th>פומודורו</th><th>ישיבות</th><th>התקדמות</th></tr></thead>
+<tbody>${readRows||'<tr><td colspan="6" class="no-data">אין נתוני קריאה עדיין</td></tr>'}</tbody></table>
+<h2>קטלוג ספרים</h2>
+<table><thead><tr><th>שם</th><th>מחבר</th><th>הוצאה לאור</th><th>שנה</th><th>ז'אנר</th><th>פורמט</th><th>התקדמות</th></tr></thead>
+<tbody>${catRows||'<tr><td colspan="7" class="no-data">אין ספרים</td></tr>'}</tbody></table>
+<button class="print-btn" onclick="window.print()">🖨️ הדפס / שמור PDF</button>
+</body></html>`;
+  const w = window.open('', '_blank');
+  if (w) { w.document.write(html); w.document.close(); }
+  else showToast('אפשר חלונות קופצים בדפדפן כדי לפתוח את הדוח');
 }
 
 // מחיל את גודל הגופן הנוכחי על תוכן ה-EPUB
