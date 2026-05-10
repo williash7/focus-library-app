@@ -187,6 +187,34 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 .info-chip-active { background: var(--chip-color, var(--primary)); color: white !important; border-color: var(--chip-color, var(--primary)) !important; }
 .info-chip-count { font-weight: 700; font-size: 0.75rem; }
 
+/* ── READING STATS ── */
+.stats-panel { padding: 2px 0; }
+.stat-card { background: var(--bg2); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+.stat-icon { font-size: 1.3rem; flex-shrink: 0; }
+.stat-info { flex: 1; min-width: 0; }
+.stat-value { font-size: 1.15rem; font-weight: 700; color: var(--primary); line-height: 1.2; }
+.stat-label { font-size: 0.72rem; color: var(--muted); }
+.stats-row { display: flex; gap: 6px; }
+.stats-row .stat-card { flex: 1; margin-bottom: 0; }
+.stat-chart-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.stat-chart-title { font-size: 0.78rem; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
+.chart-bars { display: flex; align-items: flex-end; gap: 2px; height: 60px; }
+.chart-bar-wrap { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
+.chart-bar { width: 100%; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 1px; }
+.chart-bar-label { font-size: 0.55rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-align: center; }
+.lib-stats-summary { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.lib-stat-chip { flex: 1; min-width: 90px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 8px; text-align: center; box-shadow: var(--shadow); }
+.lib-stat-chip .stat-value { font-size: 1rem; }
+.lib-stats-table { background: var(--card); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.lib-stats-row { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); gap: 10px; }
+.lib-stats-row:last-child { border-bottom: none; }
+.lib-stats-book { flex: 1; min-width: 0; }
+.lib-stats-book-title { font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.lib-stats-nums { display: flex; gap: 14px; flex-shrink: 0; }
+.lib-stats-num { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.lib-stats-num .num-val { font-size: 0.9rem; font-weight: 700; color: var(--primary); }
+.lib-stats-num .num-lbl { font-size: 0.65rem; color: var(--muted); }
+
 /* ── EMPTY STATE ── */
 .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
 .empty-state p { margin: 10px 0; font-size: 1rem; }
@@ -494,6 +522,7 @@ const S = {
   _editingTocId: null, _addingToc: false,
   readerPanel: 'timer',
   timerRunning: false, timerMin: 25, timerSec: 0, timerInterval: null, pomodorosDone: 0,
+  _sessionStart: null, _sessionPomodoros: 0, _sessionInterruptions: 0, bookSessions: [],
   theme: 'light', fontSize: 16, sidebarOpen: false,
   pendingSelText: '',
   db: null,
@@ -503,7 +532,7 @@ const S = {
 // פותח את מסד הנתונים של IndexedDB ומגדיר את מבנה האחסון
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('FocusLibrary', 5);
+    const r = indexedDB.open('FocusLibrary', 6);
     r.onupgradeneeded = e => {
       const d = e.target.result;
       const tx = e.target.transaction;
@@ -528,6 +557,11 @@ function openDB() {
       // v5: separate file blobs from book metadata so startup doesn't load all binary data
       if (!d.objectStoreNames.contains('files'))
         d.createObjectStore('files', { keyPath: 'id' });
+      // v6: reading sessions for statistics
+      if (!d.objectStoreNames.contains('readingSessions')) {
+        const rs = d.createObjectStore('readingSessions', { keyPath: 'id' });
+        rs.createIndex('bookId', 'bookId');
+      }
       // migrate existing books: move fileData into the files store
       if (e.oldVersion < 5 && d.objectStoreNames.contains('books')) {
         const booksStore = tx.objectStore('books');
@@ -651,7 +685,7 @@ function cycleTheme() {
 // ═══ LIBRARY ═══
 // מרנדר את ממשק הספרייה הראשי כולל כפתורי ניווט ובקרות
 function renderLib() {
-  const tabLabels = { books:'📚 ספרים', shelves:'🗄 מדפים', series:'📖 סדרות', dictionary:'📒 מילון' };
+  const tabLabels = { books:'📚 ספרים', shelves:'🗄 מדפים', series:'📖 סדרות', dictionary:'📒 מילון', stats:'📊 סטטיסטיקות' };
   const isBooks = S.libTab === 'books';
 
   const sortOpts = [
@@ -700,6 +734,7 @@ function renderTabContent() {
   else if (S.libTab === 'shelves') el.innerHTML = renderShelvesTab();
   else if (S.libTab === 'series') el.innerHTML = renderSeriesTab();
   else if (S.libTab === 'dictionary') el.innerHTML = renderGlobalDictTab();
+  else if (S.libTab === 'stats') { el.innerHTML = '<div class="muted" style="text-align:center;padding:40px">⏳ טוען...</div>'; loadAndRenderLibStats(); }
 }
 
 // ═══ FIELD UTILS ═══
@@ -716,7 +751,7 @@ function fchips(vals, cls) {
 // ═══ NAV DRAWER ═══
 // פותח את תפריט הניווט הצדדי ומציג קישורי לשוניות
 function openNav() {
-  const tabs = [['books','📚 ספרים'],['shelves','🗄 מדפים'],['series','📖 סדרות'],['dictionary','📒 מילון']];
+  const tabs = [['books','📚 ספרים'],['shelves','🗄 מדפים'],['series','📖 סדרות'],['dictionary','📒 מילון'],['stats','📊 סטטיסטיקות']];
   $id('navLinks').innerHTML = tabs.map(([t,l]) =>
     `<button class="nav-item ${S.libTab===t?'active':''}" onclick="switchTab('${t}');closeNav()">${l}</button>`
   ).join('') + `<div class="nav-divider"></div>
@@ -1297,6 +1332,8 @@ async function _deleteBookById(bookId) {
   for (const d of dicts) await dbDelete('dictionary', d.id);
   const bms = await dbGetByIndex('bookmarks','bookId',bookId);
   for (const bm of bms) await dbDelete('bookmarks', bm.id);
+  const sessions = await dbGetByIndex('readingSessions','bookId',bookId);
+  for (const s of sessions) await dbDelete('readingSessions', s.id);
 }
 
 // ═══ BULK SELECT ═══
@@ -1487,7 +1524,12 @@ async function openBook(bookId) {
   S.annotations = await dbGetByIndex('annotations','bookId',bookId);
   S.dictionary = await dbGetAll('dictionary');
   S.bookmarks = await dbGetByIndex('bookmarks','bookId',bookId);
-  book.lastRead = Date.now();
+  S.bookSessions = await dbGetByIndex('readingSessions','bookId',bookId);
+  S._sessionStart = Date.now();
+  S._sessionPomodoros = 0;
+  S._sessionInterruptions = 0;
+  S.pomodorosDone = 0;
+  book.lastRead = S._sessionStart;
   await dbPut('books', bookMeta(book));
 
   $id('libPage').style.display = 'none';
@@ -1499,7 +1541,18 @@ async function openBook(bookId) {
 }
 
 // סוגר את הקורא וחוזר לתצוגת הספרייה
-function closeReader() {
+async function closeReader() {
+  if (S.currentBook && S._sessionStart) {
+    const duration = Math.round((Date.now() - S._sessionStart) / 1000);
+    if (duration > 30) {
+      await dbPut('readingSessions', {
+        id: uid(), bookId: S.currentBook.id,
+        startTime: S._sessionStart, endTime: Date.now(),
+        duration, pomodorosCompleted: S._sessionPomodoros, interruptions: S._sessionInterruptions
+      });
+    }
+  }
+  S._sessionStart = null;
   clearTimerInterval();
   if (S._pdfObserver) { S._pdfObserver.disconnect(); S._pdfObserver = null; }
   clearTimeout(S._pdfSaveTimer);
@@ -1539,7 +1592,7 @@ function renderReaderUI() {
     </div>
     <aside class="reader-sidebar${S.sidebarOpen?'':' sidebar-hidden'}">
       <div class="sidebar-tabs">
-        ${[['timer','⏱'],['notes','📝'],['dict','📒'],['bookmarks','🔖'],['settings','⚙️']].map(([p,ic])=>
+        ${[['timer','⏱'],['notes','📝'],['dict','📒'],['bookmarks','🔖'],['stats','📊'],['settings','⚙️']].map(([p,ic])=>
           `<button class="stab ${S.readerPanel===p?'active':''}" onclick="switchPanel('${p}')">${ic}</button>`
         ).join('')}
       </div>
@@ -1553,7 +1606,7 @@ function renderReaderUI() {
 function switchPanel(panel) {
   S.readerPanel = panel;
   document.querySelectorAll('.stab').forEach(b => {
-    const map = {timer:'⏱',notes:'📝',dict:'📒',bookmarks:'🔖',settings:'⚙️'};
+    const map = {timer:'⏱',notes:'📝',dict:'📒',bookmarks:'🔖',stats:'📊',settings:'⚙️'};
     b.classList.toggle('active', b.textContent.trim() === map[panel]);
   });
   const el = $id('sidebarContent');
@@ -1562,6 +1615,7 @@ function switchPanel(panel) {
   else if (panel === 'notes') el.innerHTML = renderNotesPanel();
   else if (panel === 'dict') el.innerHTML = renderDictPanel();
   else if (panel === 'bookmarks') el.innerHTML = renderBookmarksPanel();
+  else if (panel === 'stats') el.innerHTML = renderStatsPanel();
   else if (panel === 'settings') el.innerHTML = renderSettingsPanel();
 }
 
@@ -1597,6 +1651,7 @@ function renderTimerPanel() {
       ).join('')}
     </div>
     <div class="pomodoros-done">🍅 ${S.pomodorosDone} פומודורו</div>
+    <div class="pomodoros-done" style="font-size:0.75rem;color:var(--muted);margin-top:2px">⏱ ${fmtReadingTime(S._sessionStart ? Math.round((Date.now()-S._sessionStart)/1000) : 0)} בסשן זה</div>
   </div>`;
 }
 
@@ -1613,6 +1668,7 @@ function startTimer() {
       clearTimerInterval();
       S.timerRunning = false;
       S.pomodorosDone++;
+      S._sessionPomodoros++;
       S.timerMin = Math.round(S.timerTotal / 60);
       S.timerSec = 0;
     }
@@ -1621,7 +1677,7 @@ function startTimer() {
   switchPanel('timer');
 }
 // עוצר את הטיימר הפעיל מבלי לאפס אותו
-function pauseTimer() { clearTimerInterval(); S.timerRunning = false; switchPanel('timer'); }
+function pauseTimer() { if (S.timerRunning) S._sessionInterruptions++; clearTimerInterval(); S.timerRunning = false; switchPanel('timer'); }
 // מאפס את הטיימר לזמן ההתחלתי
 function resetTimer() {
   clearTimerInterval(); S.timerRunning = false;
@@ -1800,6 +1856,176 @@ function renderSettingsPanel() {
     </div>
   </div>`;
 }
+// ═══ READING STATS ═══
+function fmtReadingTime(secs) {
+  if (!secs || secs < 0) return '—';
+  const m = Math.round(secs / 60);
+  if (m < 1) return `${secs}ש`;
+  if (m < 60) return `${m} דק׳`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm ? `${h}ש׳ ${rm}ד׳` : `${h} ש׳`;
+}
+
+function renderStatsPanel() {
+  const sessions = S.bookSessions || [];
+  const curDuration = S._sessionStart ? Math.round((Date.now() - S._sessionStart) / 1000) : 0;
+  const totalTime = sessions.reduce((sum, s) => sum + (s.duration || 0), 0) + curDuration;
+  const totalPomodoros = sessions.reduce((sum, s) => sum + (s.pomodorosCompleted || 0), 0) + S._sessionPomodoros;
+  const totalInterruptions = sessions.reduce((sum, s) => sum + (s.interruptions || 0), 0) + S._sessionInterruptions;
+
+  const days = 14;
+  const now = Date.now();
+  const dayMs = 86400000;
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const dayData = Array.from({length: days}, (_, i) => {
+    const dayStart = now - (days - 1 - i) * dayMs;
+    const dayEnd = dayStart + dayMs;
+    const label = new Date(dayStart).toLocaleDateString('he-IL', {day:'numeric', month:'numeric'});
+    let secs = sessions.filter(s => s.startTime >= dayStart && s.startTime < dayEnd).reduce((sum, s) => sum + (s.duration || 0), 0);
+    if (i === days - 1 && S._sessionStart >= todayStart.getTime()) secs += curDuration;
+    return { label, secs };
+  });
+  const maxSecs = Math.max(...dayData.map(d => d.secs), 1);
+  const chartBars = dayData.map((d, i) => {
+    const pct = Math.round((d.secs / maxSecs) * 100);
+    const isToday = i === days - 1;
+    const opacity = d.secs === 0 ? 'opacity:0.15;' : '';
+    const color = isToday ? 'var(--accent)' : 'var(--primary)';
+    const showLabel = i === 0 || i === Math.floor(days/2) || isToday;
+    return `<div class="chart-bar-wrap">
+      <div class="chart-bar" style="height:${Math.max(pct,1)}%;background:${color};${opacity}"></div>
+      <div class="chart-bar-label">${showLabel ? d.label : ''}</div>
+    </div>`;
+  }).join('');
+
+  const noData = sessions.length === 0 && !curDuration;
+  return `<div class="stats-panel">
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-icon">⏱</div>
+        <div class="stat-info">
+          <div class="stat-value">${fmtReadingTime(totalTime)}</div>
+          <div class="stat-label">זמן קריאה כולל</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🍅</div>
+        <div class="stat-info">
+          <div class="stat-value">${totalPomodoros}</div>
+          <div class="stat-label">פומודורו</div>
+        </div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">⚡</div>
+      <div class="stat-info">
+        <div class="stat-value">${totalInterruptions}</div>
+        <div class="stat-label">הפרעות (עצירת טיימר)</div>
+      </div>
+    </div>
+    <div class="stat-chart-wrap">
+      <div class="stat-chart-title">זמן קריאה — 14 הימים האחרונים</div>
+      <div class="chart-bars">${chartBars}</div>
+    </div>
+    ${noData ? '<p class="muted" style="text-align:center;margin-top:12px">אין נתוני קריאה עדיין</p>' : ''}
+  </div>`;
+}
+
+async function loadAndRenderLibStats() {
+  const el = $id('libContent');
+  if (!el) return;
+  const allSessions = await dbGetAll('readingSessions');
+  if (S.libTab !== 'stats') return;
+  const totalTime = allSessions.reduce((s, r) => s + (r.duration || 0), 0);
+  const totalPomodoros = allSessions.reduce((s, r) => s + (r.pomodorosCompleted || 0), 0);
+  const totalInterruptions = allSessions.reduce((s, r) => s + (r.interruptions || 0), 0);
+  const totalSessions = allSessions.length;
+
+  if (!totalSessions) {
+    el.innerHTML = `<div class="empty-state"><div style="font-size:3rem">📊</div>
+      <p>אין נתוני קריאה עדיין</p>
+      <p class="muted">פתח ספר וקרא כדי לעקוב אחר ההתקדמות שלך</p></div>`;
+    return;
+  }
+
+  const bookStats = {};
+  for (const session of allSessions) {
+    if (!bookStats[session.bookId]) bookStats[session.bookId] = { time: 0, pomodoros: 0, sessions: 0 };
+    bookStats[session.bookId].time += session.duration || 0;
+    bookStats[session.bookId].pomodoros += session.pomodorosCompleted || 0;
+    bookStats[session.bookId].sessions++;
+  }
+
+  const days = 30;
+  const now = Date.now();
+  const dayMs = 86400000;
+  const dayData = Array.from({length: days}, (_, i) => {
+    const dayStart = now - (days - 1 - i) * dayMs;
+    const dayEnd = dayStart + dayMs;
+    const label = new Date(dayStart).toLocaleDateString('he-IL', {day:'numeric', month:'numeric'});
+    const secs = allSessions.filter(s => s.startTime >= dayStart && s.startTime < dayEnd).reduce((sum, s) => sum + (s.duration || 0), 0);
+    return { label, secs };
+  });
+  const maxSecs = Math.max(...dayData.map(d => d.secs), 1);
+  const chartBars = dayData.map((d, i) => {
+    const pct = Math.round((d.secs / maxSecs) * 100);
+    const isToday = i === days - 1;
+    const opacity = d.secs === 0 ? 'opacity:0.15;' : '';
+    const color = isToday ? 'var(--accent)' : 'var(--primary)';
+    const showLabel = i === 0 || i === 10 || i === 20 || isToday;
+    return `<div class="chart-bar-wrap">
+      <div class="chart-bar" style="height:${Math.max(pct,1)}%;background:${color};${opacity}"></div>
+      <div class="chart-bar-label">${showLabel ? d.label : ''}</div>
+    </div>`;
+  }).join('');
+
+  const sortedBooks = S.books
+    .filter(b => bookStats[b.id])
+    .sort((a, b) => (bookStats[b.id]?.time || 0) - (bookStats[a.id]?.time || 0));
+
+  el.innerHTML = `
+  <div class="lib-stats-summary">
+    <div class="lib-stat-chip">
+      <div class="stat-value">${fmtReadingTime(totalTime)}</div>
+      <div class="stat-label">זמן קריאה כולל</div>
+    </div>
+    <div class="lib-stat-chip">
+      <div class="stat-value">${totalPomodoros}</div>
+      <div class="stat-label">פומודורו</div>
+    </div>
+    <div class="lib-stat-chip">
+      <div class="stat-value">${totalSessions}</div>
+      <div class="stat-label">ישיבות קריאה</div>
+    </div>
+    <div class="lib-stat-chip">
+      <div class="stat-value">${totalInterruptions}</div>
+      <div class="stat-label">הפרעות</div>
+    </div>
+  </div>
+  <div class="stat-chart-wrap" style="margin-bottom:16px">
+    <div class="stat-chart-title">פעילות קריאה — 30 ימים אחרונים</div>
+    <div class="chart-bars" style="height:80px">${chartBars}</div>
+  </div>
+  ${sortedBooks.length ? `<div class="stat-chart-title" style="margin-bottom:8px">ספרים לפי זמן קריאה</div>
+  <div class="lib-stats-table">
+    ${sortedBooks.map(b => {
+      const st = bookStats[b.id];
+      return `<div class="lib-stats-row">
+        <div class="lib-stats-book">
+          <div class="lib-stats-book-title">${esc(b.title)}</div>
+          ${b.author ? `<div class="muted" style="font-size:0.75rem">${esc(b.author)}</div>` : ''}
+        </div>
+        <div class="lib-stats-nums">
+          <div class="lib-stats-num"><span class="num-val">${fmtReadingTime(st.time)}</span><span class="num-lbl">זמן</span></div>
+          <div class="lib-stats-num"><span class="num-val">🍅${st.pomodoros}</span><span class="num-lbl">פומודורו</span></div>
+          <div class="lib-stats-num"><span class="num-val">${st.sessions}</span><span class="num-lbl">ישיבות</span></div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>` : ''}`;
+}
+
 // מחיל את גודל הגופן הנוכחי על תוכן ה-EPUB
 function applyEpubFontSize() {
   const el = $id('epubContent');
