@@ -329,6 +329,9 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 .modal-body { padding: 20px; }
 .modal-buttons { display: flex; gap: 10px; margin-top: 16px; }
 .type-filter-bar { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 8px; border-bottom: 1px solid var(--border); background: var(--card); flex-shrink: 0; }
+.lib-filters-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 16px 8px; background: var(--card); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.lib-filters-row .sort-select { font-size: 0.82rem; padding: 5px 8px; }
+.filter-active-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); display: inline-block; margin-right: 4px; }
 .type-filter-btn { padding: 5px 12px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-size: 0.8rem; white-space: nowrap; transition: all 0.2s; }
 .type-filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
 .type-filter-btn:not(.active):hover { border-color: var(--primary); color: var(--primary); }
@@ -558,7 +561,7 @@ const S = {
   books: [], shelves: [], seriesList: [],
   annotations: [], dictionary: [], bookmarks: [],
   libTab: 'books', libView: 'list', libSort: 'date', libSearch: '',
-  libTypeFilter: null,
+  libTypeFilter: null, libFormatFilter: null, libLangFilter: null,
   libShelfFilter: null, libSeriesFilter: null, libInfoFilter: null,
   libGroupBy: null, libInfoBreakdownOpen: false,
   libSelectMode: false, libSelected: new Set(),
@@ -742,9 +745,15 @@ function renderLib(scrollTo) {
   ].map(([v,l]) => `<option value="${v}" ${S.libSort===v?'selected':''}>${l}</option>`).join('');
 
   const groupOpts = [
-    ['','ללא קיבוץ'],['author','לפי מחבר'],['year','לפי שנה'],
-    ['genre','לפי ז׳אנר'],['publisher','לפי הוצאה']
+    ['','ללא קיבוץ'],['firstLetter','לפי אות ראשונה'],['author','לפי מחבר'],
+    ['year','לפי שנה'],['genre','לפי ז׳אנר'],['publisher','לפי הוצאה'],
+    ['language','לפי שפה'],['type','לפי סוג'],
   ].map(([v,l]) => `<option value="${v}" ${(S.libGroupBy||'')===v?'selected':''}>${l}</option>`).join('');
+
+  const uniqueLangs = [...new Set(S.books.map(b=>b.language||'').filter(Boolean))].sort();
+  const langOpts = uniqueLangs.map(l =>
+    `<option value="${esc(l)}" ${S.libLangFilter===l?'selected':''}>${esc(l)}</option>`).join('');
+  const anyFilter = S.libFormatFilter || S.libLangFilter;
 
   const controlsBar = !isBooks ? '' : `
   <div class="lib-controls-bar">
@@ -755,6 +764,19 @@ function renderLib(scrollTo) {
     <button class="view-btn ${S.libView==='list'?'active':''}" onclick="S.libView='list';renderLib()" title="רשימה">≡</button>
     <button class="view-btn ${S.libView==='grid'?'active':''}" onclick="S.libView='grid';renderLib()" title="גריד">⊞</button>
     <button class="view-btn ${S.libSelectMode?'active':''}" onclick="toggleSelectMode()" title="בחר ספרים">☑</button>
+  </div>
+  <div class="lib-filters-row">
+    <span style="font-size:0.78rem;color:var(--muted);white-space:nowrap">סנן:</span>
+    <select class="sort-select" style="font-size:0.82rem" onchange="S.libFormatFilter=this.value||null;renderTabContent()">
+      <option value="" ${!S.libFormatFilter?'selected':''}>כל הפורמטים</option>
+      <option value="pdf"  ${S.libFormatFilter==='pdf' ?'selected':''}>PDF</option>
+      <option value="epub" ${S.libFormatFilter==='epub'?'selected':''}>EPUB</option>
+    </select>
+    ${uniqueLangs.length ? `<select class="sort-select" style="font-size:0.82rem" onchange="S.libLangFilter=this.value||null;renderTabContent()">
+      <option value="" ${!S.libLangFilter?'selected':''}>כל השפות</option>
+      ${langOpts}
+    </select>` : ''}
+    ${anyFilter ? `<button class="btn-secondary" style="font-size:0.75rem;padding:3px 9px" onclick="S.libFormatFilter=null;S.libLangFilter=null;renderTabContent()">✕ נקה</button>` : ''}
   </div>`;
 
   $id('libPage').innerHTML = `
@@ -835,15 +857,22 @@ function renderGroupedBooks(books) {
   const groups = new Map();
   for (const book of books) {
     let keys = [];
-    if (gf === 'author')    keys = splitField(book.author);
-    else if (gf === 'year') keys = [(book.year||'').trim()];
-    else if (gf === 'genre') keys = splitField(book.genre);
-    else if (gf === 'publisher') keys = splitField(book.publisher);
+    if (gf === 'author')          keys = splitField(book.author);
+    else if (gf === 'year')       keys = [(book.year||'').trim()];
+    else if (gf === 'genre')      keys = splitField(book.genre);
+    else if (gf === 'publisher')  keys = splitField(book.publisher);
+    else if (gf === 'language')   keys = [(book.language||'').trim()];
+    else if (gf === 'type')       keys = [ITEM_TYPE_LABEL[book.itemType||'book'] || 'ספר'];
+    else if (gf === 'firstLetter') {
+      const ch = (book.title||'').replace(/^["״«\s]+/,'').charAt(0).toUpperCase();
+      keys = [ch || '#'];
+    }
     if (!keys.length || (keys.length===1 && !keys[0])) keys = ['ללא'];
     for (const k of keys) { if (!groups.has(k)) groups.set(k,[]); groups.get(k).push(book); }
   }
   let sorted = [...groups.entries()];
   if (gf === 'year') sorted.sort((a,b) => (b[0]||'0').localeCompare(a[0]||'0'));
+  else if (gf === 'firstLetter') sorted.sort((a,b) => a[0].localeCompare(b[0],'he'));
   else sorted.sort((a,b) => { if (a[0]==='ללא') return 1; if (b[0]==='ללא') return -1; return a[0].localeCompare(b[0],'he'); });
   if (!sorted.length) return `<div class="empty-state"><div style="font-size:3rem">🔍</div><p>אין ספרים</p></div>`;
   return sorted.map(([name, gbooks]) => `
@@ -876,8 +905,10 @@ function getSortedBooks() {
       (b.title||'').toLowerCase().includes(q) || (b.author||'').toLowerCase().includes(q)
     );
   }
-  if (S.libTypeFilter) books = books.filter(b => (b.itemType||'book') === S.libTypeFilter);
-  if (S.libShelfFilter) books = books.filter(b => (b.shelves||[]).includes(S.libShelfFilter));
+  if (S.libTypeFilter)   books = books.filter(b => (b.itemType||'book') === S.libTypeFilter);
+  if (S.libFormatFilter) books = books.filter(b => (b.format||'') === S.libFormatFilter);
+  if (S.libLangFilter)   books = books.filter(b => (b.language||'') === S.libLangFilter);
+  if (S.libShelfFilter)  books = books.filter(b => (b.shelves||[]).includes(S.libShelfFilter));
   if (S.libSeriesFilter) books = books.filter(b => (b.series||[]).includes(S.libSeriesFilter));
   if (S.libInfoFilter === 'missing') books = books.filter(b => missingFields(b).length > 0);
   if (S.libInfoFilter === 'complete') books = books.filter(b => missingFields(b).length === 0);
@@ -1262,7 +1293,17 @@ async function handleFiles(files) {
           if (yr) book.year = yr;
           const metaGenre = get('Subject') || xmp('dc:subject');
           if (metaGenre) book.genre = metaGenre;
+          const metaLang = get('Language') || xmp('dc:language');
+          if (metaLang) book.language = _normalizeLang(metaLang);
         } catch(e) {}
+        // זיהוי שפה מטקסט אם לא נמצאה במטאדטה
+        if (!book.language) {
+          try {
+            const page = await doc.getPage(1);
+            const content = await page.getTextContent();
+            book.language = _detectLangFromText(content.items.map(i=>i.str).join(''));
+          } catch(e) {}
+        }
         doc.destroy();
       } catch(e) { console.warn('PDF error', e); }
     }
@@ -1399,7 +1440,12 @@ function editBook(bookId) {
 
     <div data-field="f-genre"><label>ז׳אנר / נושא<input type="text" id="eGenre" value="${esc(book.genre||'')}"></label></div>
 
-    <div data-field="f-lang" class="col1"><label>שפה<input type="text" id="eLanguage" value="${esc(book.language||'')}" placeholder="עברית / English ..."></label></div>
+    <div data-field="f-lang" class="col1"><label>שפה
+      <div style="display:flex;gap:6px">
+        <input type="text" id="eLanguage" value="${esc(book.language||'')}" placeholder="עברית / English ..." style="flex:1">
+        <button type="button" class="btn-secondary" style="padding:5px 8px;font-size:0.78rem;white-space:nowrap" onclick="autoDetectLanguage('${book.id}')" title="זיהוי אוטומטי מהקובץ">🔍 זהה</button>
+      </div>
+    </label></div>
 
     <div data-field="f-desc"><label>תקציר
       <textarea id="eDescription" rows="4" style="resize:vertical;font-family:inherit;font-size:0.9rem;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);width:100%">${esc(book.description||'')}</textarea>
@@ -3321,6 +3367,55 @@ async function extractPdfCover(data) {
   } catch(e) { return null; }
 }
 
+
+// מזהה שפה מתוך טקסט לפי טווחי Unicode
+function _detectLangFromText(text) {
+  if (!text || text.length < 30) return '';
+  let he = 0, ar = 0, lat = 0;
+  for (const c of text) {
+    const cp = c.codePointAt(0);
+    if ((cp >= 0x0590 && cp <= 0x05FF) || (cp >= 0xFB1D && cp <= 0xFB4F)) he++;
+    else if (cp >= 0x0600 && cp <= 0x06FF) ar++;
+    else if ((cp >= 0x41 && cp <= 0x5A) || (cp >= 0x61 && cp <= 0x7A)) lat++;
+  }
+  const total = he + ar + lat;
+  if (total < 20) return '';
+  if (he / total > 0.15) return 'עברית';
+  if (ar / total > 0.20) return 'ערבית';
+  if (lat / total > 0.40) return 'English';
+  return '';
+}
+
+// מזהה שפה אוטומטית מקובץ הספר הנוכחי (לכפתור בחלון עריכה)
+async function autoDetectLanguage(bookId) {
+  const book = S.books.find(b => b.id === bookId);
+  if (!book) return;
+  showToast('מזהה שפה...');
+  try {
+    const fileRecord = await dbGet('files', bookId);
+    if (!fileRecord?.data) return showToast('קובץ לא נמצא');
+    let lang = '';
+    if (book.format === 'epub') {
+      const zip = await JSZip.loadAsync(fileRecord.data.slice(0));
+      const meta = await extractEpubMeta(zip);
+      lang = meta.language || '';
+    } else if (book.format === 'pdf') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const doc = await pdfjsLib.getDocument({ data: fileRecord.data.slice(0) }).promise;
+      try {
+        const { info } = await doc.getMetadata();
+        if (info?.Language) { lang = _normalizeLang(info.Language); }
+        if (!lang) {
+          const page = await doc.getPage(1);
+          const content = await page.getTextContent();
+          lang = _detectLangFromText(content.items.map(i => i.str).join(''));
+        }
+      } finally { doc.destroy(); }
+    }
+    if (lang) { $id('eLanguage').value = lang; showToast(`זוהתה שפה: ${lang} ✓`); }
+    else showToast('לא זוהתה שפה אוטומטית');
+  } catch(e) { showToast('שגיאה בזיהוי שפה'); }
+}
 
 // ממיר קוד שפה (ISO) לשם קריא
 function _normalizeLang(code) {
