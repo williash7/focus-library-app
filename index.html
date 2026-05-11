@@ -328,7 +328,14 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Ar
 .modal-header h2 { font-size: 1.1rem; color: var(--text); }
 .modal-body { padding: 20px; }
 .modal-buttons { display: flex; gap: 10px; margin-top: 16px; }
+.type-filter-bar { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 8px; border-bottom: 1px solid var(--border); background: var(--card); flex-shrink: 0; }
+.type-filter-btn { padding: 5px 12px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-size: 0.8rem; white-space: nowrap; transition: all 0.2s; }
+.type-filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+.type-filter-btn:not(.active):hover { border-color: var(--primary); color: var(--primary); }
+.item-type-badge { font-size: 0.68rem; padding: 1px 7px; border-radius: 8px; background: var(--bg2); color: var(--muted); font-weight: 600; border: 1px solid var(--border); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.form-grid > [data-field] { grid-column: 1/-1; }
+.form-grid > [data-field].col1 { grid-column: span 1; }
 .form-grid label, label { display: flex; flex-direction: column; gap: 5px; font-size: 0.85rem; color: var(--muted); font-weight: 500; }
 .form-grid input, .form-grid select, input[type=text], input[type=number], select, textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 0.9rem; font-family: inherit; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
@@ -551,6 +558,7 @@ const S = {
   books: [], shelves: [], seriesList: [],
   annotations: [], dictionary: [], bookmarks: [],
   libTab: 'books', libView: 'list', libSort: 'date', libSearch: '',
+  libTypeFilter: null,
   libShelfFilter: null, libSeriesFilter: null, libInfoFilter: null,
   libGroupBy: null, libInfoBreakdownOpen: false,
   libSelectMode: false, libSelected: new Set(),
@@ -729,7 +737,8 @@ function renderLib(scrollTo) {
 
   const sortOpts = [
     ['date','תאריך הוספה'],['title','שם'],['author','מחבר'],
-    ['year','שנה'],['publisher','הוצאה לאור'],['format','פורמט'],['progress','התקדמות']
+    ['year','שנה'],['publisher','הוצאה לאור'],['format','פורמט'],['progress','התקדמות'],
+    ['issueDate','תאריך גיליון'],['volume','כרך / גיליון'],
   ].map(([v,l]) => `<option value="${v}" ${S.libSort===v?'selected':''}>${l}</option>`).join('');
 
   const groupOpts = [
@@ -867,6 +876,7 @@ function getSortedBooks() {
       (b.title||'').toLowerCase().includes(q) || (b.author||'').toLowerCase().includes(q)
     );
   }
+  if (S.libTypeFilter) books = books.filter(b => (b.itemType||'book') === S.libTypeFilter);
   if (S.libShelfFilter) books = books.filter(b => (b.shelves||[]).includes(S.libShelfFilter));
   if (S.libSeriesFilter) books = books.filter(b => (b.series||[]).includes(S.libSeriesFilter));
   if (S.libInfoFilter === 'missing') books = books.filter(b => missingFields(b).length > 0);
@@ -875,24 +885,30 @@ function getSortedBooks() {
     const field = S.libInfoFilter.slice(8);
     books = books.filter(b => missingFields(b).includes(field));
   }
-  // כשמסנן לפי סדרה ומיון ברירת מחדל — ממיין לפי מספר בסדרה
+  // מיון לפי סדרה כשמסנן לפי סדרה
   if (S.libSeriesFilter && S.libSort === 'date') {
-    books.sort((a,b) => {
-      const na = (a.seriesNums||{})[S.libSeriesFilter] ?? 9999;
-      const nb = (b.seriesNums||{})[S.libSeriesFilter] ?? 9999;
-      return na - nb;
-    });
-  } else {
-    books.sort((a,b) => {
-      if (S.libSort==='title') return (a.title||'').localeCompare(b.title||'','he');
-      if (S.libSort==='author') return (a.author||'').localeCompare(b.author||'','he');
-      if (S.libSort==='year') return (b.year||0) - (a.year||0);
-      if (S.libSort==='publisher') return (a.publisher||'').localeCompare(b.publisher||'','he');
-      if (S.libSort==='format') return (a.format||'').localeCompare(b.format||'');
-      if (S.libSort==='progress') return getProgress(b) - getProgress(a);
-      return (b.dateAdded||0) - (a.dateAdded||0);
-    });
+    books.sort((a,b) => ((a.seriesNums||{})[S.libSeriesFilter]??9999) - ((b.seriesNums||{})[S.libSeriesFilter]??9999));
+    return books;
   }
+  // מיון חכם לפי סוג פריט כשמיון ברירת מחדל
+  const effectiveSort = S.libSort !== 'date' ? S.libSort :
+    S.libTypeFilter === 'journal'  ? 'issueDate' :
+    S.libTypeFilter === 'article'  ? 'author' :
+    'date';
+  books.sort((a,b) => {
+    if (effectiveSort==='title')     return (a.title||'').localeCompare(b.title||'','he');
+    if (effectiveSort==='author')    return (a.author||'').localeCompare(b.author||'','he');
+    if (effectiveSort==='year')      return (b.year||0) - (a.year||0);
+    if (effectiveSort==='publisher') return (a.publisher||b.organization||'').localeCompare(b.publisher||b.organization||'','he');
+    if (effectiveSort==='format')    return (a.format||'').localeCompare(b.format||'');
+    if (effectiveSort==='progress')  return getProgress(b) - getProgress(a);
+    if (effectiveSort==='issueDate') return (b.issueDate||'').localeCompare(a.issueDate||'');
+    if (effectiveSort==='volume') {
+      const vd = (b.volume||0) - (a.volume||0);
+      return vd !== 0 ? vd : (b.issue||'').localeCompare(a.issue||'');
+    }
+    return (b.dateAdded||0) - (a.dateAdded||0);
+  });
   return books;
 }
 
@@ -951,18 +967,34 @@ function renderSelectBar(visibleBooks) {
   </div>`;
 }
 
+const ITEM_TYPES = [
+  { v: null,       l: '📋 הכל' },
+  { v: 'book',     l: '📚 ספרים' },
+  { v: 'booklet',  l: '📄 חוברות' },
+  { v: 'journal',  l: '📰 כתבי עת' },
+  { v: 'article',  l: '✍️ מאמרים' },
+  { v: 'misc',     l: '🗂 שונות' },
+];
+const ITEM_TYPE_LABEL = { book:'ספר', booklet:'חוברת', journal:'כתב עת', article:'מאמר', misc:'שונות' };
+
 // מרנדר את לשונית הספרים עם רשימה או גריד של ספרים
 function renderBooksTab() {
+  const typeBar = `<div class="type-filter-bar">${ITEM_TYPES.map(({v,l}) => {
+    const active = (S.libTypeFilter ?? null) === v;
+    const count = v === null ? S.books.length : S.books.filter(b=>(b.itemType||'book')===v).length;
+    return `<button class="type-filter-btn${active?' active':''}" onclick="S.libTypeFilter=${JSON.stringify(v)};renderTabContent()">${l} <span style="opacity:0.65;font-size:0.75em">(${count})</span></button>`;
+  }).join('')}</div>`;
+
   const panel = renderInfoPanel();
   const books = getSortedBooks();
-  if (!books.length && !S.books.length) return panel + `<div class="empty-state">
+  if (!books.length && !S.books.length) return typeBar + panel + `<div class="empty-state">
     <div style="font-size:4rem">📚</div>
     <p>הספרייה ריקה</p>
     <button class="btn-primary" onclick="showAddModal()">הוסף את הספר הראשון</button>
   </div>`;
-  if (!books.length) return panel + `<div class="empty-state"><div style="font-size:3rem">🔍</div>
-    <p>אין ספרים התואמים לסינון הנוכחי</p>
-    <button class="btn-secondary" onclick="S.libInfoFilter=null;renderTabContent()">הסר סינון</button></div>`;
+  if (!books.length) return typeBar + panel + `<div class="empty-state"><div style="font-size:3rem">🔍</div>
+    <p>אין פריטים התואמים לסינון הנוכחי</p>
+    <button class="btn-secondary" onclick="S.libInfoFilter=null;S.libTypeFilter=null;renderTabContent()">הסר סינון</button></div>`;
   let listHtml;
   if (S.libGroupBy) {
     listHtml = renderGroupedBooks(books);
@@ -971,7 +1003,7 @@ function renderBooksTab() {
   } else {
     listHtml = `<div class="book-list">${books.map(bookListCard).join('')}</div>`;
   }
-  return panel + listHtml + renderSelectBar(books);
+  return typeBar + panel + listHtml + renderSelectBar(books);
 }
 
 // מחזיר HTML של כריכת ספר או תחליף צבעוני אם אין כריכה
@@ -986,6 +1018,34 @@ function bookCoverHtml(book, cls) {
   return `<div class="${cls} cover-placeholder" style="background:${col}">${(book.title||'?')[0]}</div>`;
 }
 
+// מחזיר שורת מטאדטה מותאמת לסוג הפריט
+function _metaLineForType(book) {
+  const type = book.itemType || 'book';
+  if (type === 'journal') {
+    return [
+      book.editor    ? fchips(splitField(book.editor),'fchip-author')           : '',
+      book.volume    ? `<span class="muted" style="font-size:0.75rem">כרך ${esc(book.volume)}</span>` : '',
+      book.issue     ? `<span class="muted" style="font-size:0.75rem">גיל׳ ${esc(book.issue)}</span>`  : '',
+      book.issueDate ? `<span class="muted" style="font-size:0.75rem">${esc(book.issueDate)}</span>`    : '',
+    ].filter(Boolean).join('');
+  }
+  if (type === 'article') {
+    return [
+      book.author     ? fchips(splitField(book.author),'fchip-author')           : '',
+      book.journalPub ? `<span class="fchip fchip-pub">${esc(book.journalPub)}</span>` : '',
+      (book.pageFrom||book.pageTo) ? `<span class="muted" style="font-size:0.75rem">עמ׳ ${esc(book.pageFrom||'')}–${esc(book.pageTo||'')}</span>` : '',
+      book.issueDate  ? `<span class="muted" style="font-size:0.75rem">${esc(book.issueDate)}</span>` : '',
+    ].filter(Boolean).join('');
+  }
+  // book / booklet / misc
+  return [
+    book.author                          ? fchips(splitField(book.author),'fchip-author')    : '',
+    (book.publisher||book.organization)  ? fchips(splitField(book.publisher||book.organization),'fchip-pub') : '',
+    book.genre                           ? fchips(splitField(book.genre),'fchip-genre')      : '',
+    book.year                            ? `<span class="muted" style="font-size:0.75rem">${esc(book.year)}</span>` : '',
+  ].filter(Boolean).join('');
+}
+
 // מחזיר HTML של כרטיס ספר בתצוגת רשימה
 function bookListCard(book) {
   const pct = getProgress(book);
@@ -995,25 +1055,20 @@ function bookListCard(book) {
     const s = S.shelves.find(x => x.id === id);
     return s ? `<span class="tag">${esc(s.name)}</span>` : '';
   }).join('');
-  const authors = splitField(book.author);
-  const pubs   = splitField(book.publisher);
-  const genres  = splitField(book.genre);
-  const metaLine = [
-    authors.length ? fchips(authors,'fchip-author') : '',
-    pubs.length    ? fchips(pubs,   'fchip-pub')    : '',
-    genres.length  ? fchips(genres, 'fchip-genre')  : '',
-    book.year      ? `<span class="muted" style="font-size:0.75rem">${esc(book.year)}</span>` : '',
-  ].filter(Boolean).join('');
+  const metaLine = _metaLineForType(book);
+  const typeBadge = S.libTypeFilter === null && book.itemType && book.itemType !== 'book'
+    ? `<span class="item-type-badge">${ITEM_TYPE_LABEL[book.itemType]||book.itemType}</span>` : '';
   return `
   <div class="book-card-list ${checked?'book-card-selected':''}"
        onclick="${sel ? `toggleBookSelect('${book.id}')` : `openBook('${book.id}')`}">
     ${sel ? `<input type="checkbox" class="book-select-cb" ${checked?'checked':''} onclick="event.stopPropagation();toggleBookSelect('${book.id}')">` : ''}
     ${bookCoverHtml(book, 'cover-sm')}
     <div class="book-info">
-      <div style="display:flex;align-items:baseline;gap:6px">
+      <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">
         <div class="book-title">${esc(book.title || 'ללא כותרת')}</div>
         ${S.libSeriesFilter && (book.seriesNums||{})[S.libSeriesFilter] != null
           ? `<span class="series-num-badge">#${(book.seriesNums||{})[S.libSeriesFilter]}</span>` : ''}
+        ${typeBadge}
       </div>
       ${book.subtitle ? `<div style="font-size:0.78rem;color:var(--muted);margin:-1px 0 2px">${esc(book.subtitle)}</div>` : ''}
       <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:3px 0">${metaLine}${book.language?`<span class="tag" style="background:var(--bg2);opacity:0.85">${esc(book.language)}</span>`:''}</div>
@@ -1291,19 +1346,64 @@ function editBook(bookId) {
     </div>`;
   }).join('');
 
+  const type = book.itemType || 'book';
   $id('editModalBody').innerHTML = `
   <input type="hidden" id="editBookId" value="${book.id}">
-  <div class="form-grid">
-    <label>כותרת<input type="text" id="eTitle" value="${esc(book.title||'')}"></label>
-    <label>תת כותרת<input type="text" id="eSubtitle" value="${esc(book.subtitle||'')}" placeholder="אם קיימת"></label>
-    <label>מחבר<input type="text" id="eAuthor" value="${esc(book.author||'')}"></label>
-    <label>הוצאה לאור<input type="text" id="ePublisher" value="${esc(book.publisher||'')}"></label>
-    <label>שנת הוצאה<input type="number" id="eYear" value="${esc(book.year||'')}" min="1000" max="2100"></label>
-    <label>שפה<input type="text" id="eLanguage" value="${esc(book.language||'')}" placeholder="עברית / English ..."></label>
-    <label style="grid-column:1/-1">ז׳אנר<input type="text" id="eGenre" value="${esc(book.genre||'')}"></label>
-    <label style="grid-column:1/-1">תקציר
-      <textarea id="eDescription" rows="4" style="resize:vertical;font-family:inherit;font-size:0.9rem;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);width:100%">${esc(book.description||'')}</textarea>
+
+  <div style="margin-bottom:12px">
+    <label>סוג פריט
+      <select id="eItemType" class="sort-select" style="width:100%;margin-top:4px" onchange="updateEditFormForType(this.value)">
+        <option value="book"    ${type==='book'   ?'selected':''}>📚 ספר</option>
+        <option value="booklet" ${type==='booklet'?'selected':''}>📄 חוברת</option>
+        <option value="journal" ${type==='journal'?'selected':''}>📰 כתב עת</option>
+        <option value="article" ${type==='article'?'selected':''}>✍️ מאמר</option>
+        <option value="misc"    ${type==='misc'   ?'selected':''}>🗂 שונות</option>
+      </select>
     </label>
+  </div>
+
+  <div class="form-grid">
+    <label style="grid-column:1/-1">כותרת<input type="text" id="eTitle" value="${esc(book.title||'')}"></label>
+
+    <div data-field="f-subtitle"><label>תת כותרת<input type="text" id="eSubtitle" value="${esc(book.subtitle||'')}" placeholder="אם קיימת"></label></div>
+
+    <div data-field="f-author"><label>מחבר<input type="text" id="eAuthor" value="${esc(book.author||'')}"></label></div>
+
+    <div data-field="f-editor"><label>עורך<input type="text" id="eEditor" value="${esc(book.editor||'')}"></label></div>
+
+    <div data-field="f-publisher" class="col1"><label>הוצאה לאור<input type="text" id="ePublisher" value="${esc(book.publisher||'')}"></label></div>
+    <div data-field="f-year"      class="col1"><label>שנת הוצאה<input type="number" id="eYear" value="${esc(book.year||'')}" min="1000" max="2100"></label></div>
+
+    <div data-field="f-organization"><label>גוף מוציא / ארגון<input type="text" id="eOrganization" value="${esc(book.organization||'')}"></label></div>
+
+    <div data-field="f-journalpub"><label>שם כתב העת / פרסום<input type="text" id="eJournalPub" value="${esc(book.journalPub||'')}"></label></div>
+
+    <div data-field="f-volume" class="col1"><label>כרך<input type="number" id="eVolume" value="${esc(book.volume||'')}" min="1" placeholder="—"></label></div>
+    <div data-field="f-issue"  class="col1"><label>גיליון<input type="text"   id="eIssue"  value="${esc(book.issue||'')}"  placeholder="3 / 3א"></label></div>
+
+    <div data-field="f-issuedate" class="col1"><label>תאריך גיליון<input type="text" id="eIssueDate" value="${esc(book.issueDate||'')}" placeholder="MM/YYYY"></label></div>
+
+    <div data-field="f-pages"><label>עמודים (מ–עד)
+      <div style="display:flex;gap:8px">
+        <input type="number" id="ePageFrom" value="${esc(book.pageFrom||'')}" min="1" placeholder="מ-" style="flex:1">
+        <input type="number" id="ePageTo"   value="${esc(book.pageTo  ||'')}" min="1" placeholder="עד" style="flex:1">
+      </div>
+    </label></div>
+
+    <div data-field="f-doi"><label>DOI / קישור<input type="text" id="eDoi" value="${esc(book.doi||'')}" placeholder="10.xxx/... או URL"></label></div>
+
+    <div data-field="f-isbn"    class="col1"><label>ISBN<input type="text" id="eIsbn"    value="${esc(book.isbn||'')}"></label></div>
+    <div data-field="f-edition" class="col1"><label>מהדורה<input type="text" id="eEdition" value="${esc(book.edition||'')}"></label></div>
+
+    <div data-field="f-issn" class="col1"><label>ISSN<input type="text" id="eIssn" value="${esc(book.issn||'')}"></label></div>
+
+    <div data-field="f-genre"><label>ז׳אנר / נושא<input type="text" id="eGenre" value="${esc(book.genre||'')}"></label></div>
+
+    <div data-field="f-lang" class="col1"><label>שפה<input type="text" id="eLanguage" value="${esc(book.language||'')}" placeholder="עברית / English ..."></label></div>
+
+    <div data-field="f-desc"><label>תקציר
+      <textarea id="eDescription" rows="4" style="resize:vertical;font-family:inherit;font-size:0.9rem;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);width:100%">${esc(book.description||'')}</textarea>
+    </label></div>
   </div>
   <div class="form-section">
     <div class="form-section-title">🖼 כריכה</div>
@@ -1329,6 +1429,22 @@ function editBook(bookId) {
     <button type="button" class="btn-secondary" style="margin-top:8px" onclick="addCustomField()">+ הוסף שדה</button>
   </div>`;
   $id('editModal').style.display = 'flex';
+  updateEditFormForType(type);
+}
+
+// מציג / מסתיר שדות בטופס עריכה בהתאם לסוג הפריט
+const _EDIT_TYPE_FIELDS = {
+  book:    ['f-subtitle','f-author','f-publisher','f-year','f-isbn','f-edition','f-genre','f-lang','f-desc'],
+  booklet: ['f-subtitle','f-author','f-organization','f-year','f-genre','f-lang','f-desc'],
+  journal: ['f-editor','f-volume','f-issue','f-issuedate','f-issn','f-genre','f-lang'],
+  article: ['f-author','f-journalpub','f-volume','f-issue','f-issuedate','f-pages','f-doi','f-lang','f-desc'],
+  misc:    ['f-author','f-year','f-genre','f-lang','f-desc'],
+};
+function updateEditFormForType(type) {
+  const visible = new Set(_EDIT_TYPE_FIELDS[type] || _EDIT_TYPE_FIELDS.book);
+  document.querySelectorAll('#editModalBody [data-field]').forEach(el => {
+    el.style.display = visible.has(el.dataset.field) ? '' : 'none';
+  });
 }
 
 // מוסיף שורת שדה מותאם אישית חדשה לטופס עריכת הספר
@@ -1346,14 +1462,28 @@ async function saveEditBook() {
   const id = $id('editBookId').value;
   const book = S.books.find(b => b.id === id);
   if (!book) return;
-  book.title = $id('eTitle').value;
-  book.subtitle = $id('eSubtitle').value.trim();
-  book.author = $id('eAuthor').value;
-  book.publisher = $id('ePublisher').value;
-  book.year = $id('eYear').value;
-  book.genre = $id('eGenre').value;
-  book.language = $id('eLanguage').value.trim();
-  book.description = $id('eDescription').value.trim();
+  const _v = id => ($id(id)?.value ?? '').trim();
+  book.itemType     = _v('eItemType') || 'book';
+  book.title        = _v('eTitle');
+  book.subtitle     = _v('eSubtitle');
+  book.author       = _v('eAuthor');
+  book.editor       = _v('eEditor');
+  book.publisher    = _v('ePublisher');
+  book.organization = _v('eOrganization');
+  book.journalPub   = _v('eJournalPub');
+  book.year         = _v('eYear');
+  book.volume       = _v('eVolume') ? Number(_v('eVolume')) : '';
+  book.issue        = _v('eIssue');
+  book.issueDate    = _v('eIssueDate');
+  book.pageFrom     = _v('ePageFrom') ? Number(_v('ePageFrom')) : '';
+  book.pageTo       = _v('ePageTo')   ? Number(_v('ePageTo'))   : '';
+  book.doi          = _v('eDoi');
+  book.isbn         = _v('eIsbn');
+  book.edition      = _v('eEdition');
+  book.issn         = _v('eIssn');
+  book.genre        = _v('eGenre');
+  book.language     = _v('eLanguage');
+  book.description  = _v('eDescription');
   book.shelves = [...document.querySelectorAll('input[name="shelf"]:checked')].map(el => el.value);
   book.series  = [...document.querySelectorAll('input[name="series"]:checked')].map(el => el.value);
   const seriesNums = {}, shelfNums = {};
