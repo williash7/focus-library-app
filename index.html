@@ -2384,6 +2384,9 @@ function _detectImportColumns(headers) {
     else if (['עמודים','pages','total pages','מספר עמודים'].includes(n)) map.totalPages = i;
     else if (['שפה','language','lang'].includes(n)) map.language = i;
     else if (['תת כותרת','subtitle','תת-כותרת'].includes(n)) map.subtitle = i;
+    else if (['תקציר','description','תיאור','summary'].includes(n)) map.description = i;
+    else if (['סוג','type','item type','itemtype'].includes(n)) map.itemType = i;
+    else if (['עורך','editor'].includes(n)) map.editor = i;
     else if (['מדפים','shelves','shelf','מדף'].includes(n)) map.shelves = i;
     else if (['סדרות','series'].includes(n)) map.series = i;
     else if (n.includes("ז'אנר") || n.includes("ז'נר") || n.includes('genre') || n.includes('ז') && n.includes('אנר')) {
@@ -2410,13 +2413,16 @@ function _parseAndProcessImport(text) {
   for (const b of S.books) bookByTitle.set((b.title || '').trim().toLowerCase(), b);
 
   const FIELDS = [
-    { key: 'author',    label: 'מחבר',       multi: true },
-    { key: 'publisher', label: 'הוצאה לאור', multi: true },
-    { key: 'year',      label: 'שנה',         multi: false },
-    { key: 'totalPages',label: 'עמודים',      multi: false },
-    { key: 'genre',     label: "ז'אנר",       multi: true },
-    { key: 'language',  label: 'שפה',         multi: false },
-    { key: 'subtitle',  label: 'תת כותרת',   multi: false },
+    { key: 'author',      label: 'מחבר',        multi: true },
+    { key: 'editor',      label: 'עורך',         multi: true },
+    { key: 'publisher',   label: 'הוצאה לאור',  multi: true },
+    { key: 'year',        label: 'שנה',          multi: false },
+    { key: 'totalPages',  label: 'עמודים',       multi: false },
+    { key: 'genre',       label: "ז'אנר",        multi: true },
+    { key: 'language',    label: 'שפה',          multi: false },
+    { key: 'subtitle',    label: 'תת כותרת',    multi: false },
+    { key: 'description', label: 'תקציר',        multi: false },
+    { key: 'itemType',    label: 'סוג',          multi: false },
   ];
 
   const importData = [];
@@ -2433,11 +2439,18 @@ function _parseAndProcessImport(text) {
     // איסוף ערכים נכנסים
     const incoming = {};
     if (colMap.author !== undefined) incoming.author = (row[colMap.author] || '').trim();
+    if (colMap.editor !== undefined) incoming.editor = (row[colMap.editor] || '').trim();
     if (colMap.publisher !== undefined) incoming.publisher = (row[colMap.publisher] || '').trim();
     if (colMap.year !== undefined) incoming.year = (row[colMap.year] || '').trim();
     if (colMap.totalPages !== undefined) incoming.totalPages = (row[colMap.totalPages] || '').trim();
     if (colMap.language !== undefined) incoming.language = (row[colMap.language] || '').trim();
     if (colMap.subtitle !== undefined) incoming.subtitle = (row[colMap.subtitle] || '').trim();
+    if (colMap.description !== undefined) incoming.description = (row[colMap.description] || '').trim();
+    if (colMap.itemType !== undefined) {
+      const raw = (row[colMap.itemType] || '').trim();
+      const typeMap = { 'ספר':'book','חוברת':'booklet','כתב עת':'journal','מאמר':'article','שונות':'misc' };
+      incoming.itemType = typeMap[raw] || raw.toLowerCase() || '';
+    }
 
     // מיזוג כל עמודות ז'אנר לשדה אחד
     if (colMap.genreCols.length) {
@@ -2615,13 +2628,37 @@ async function applyImport() {
 
 function exportCatalogCSV() {
   const BOM = '﻿';
-  const headers = ['שם','מחבר','הוצאה לאור','שנה',"ז'אנר",'פורמט','עמודים','התקדמות %','מדפים','סדרות','תאריך הוספה','קריאה אחרונה'];
+  const headers = [
+    'שם', 'תת כותרת', 'סוג', 'מחבר', 'עורך', 'הוצאה לאור / גוף מוציא',
+    'שנה', "ז'אנר", 'שפה', 'תקציר',
+    'שם כתב העת', 'כרך', 'גיליון', 'תאריך גיליון',
+    "עמ' מ", "עמ' עד", 'DOI', 'ISBN', 'מהדורה', 'ISSN',
+    'פורמט', 'עמודים', 'התקדמות %',
+    'מדפים', 'מספר במדף', 'סדרות', 'מספר בסדרה',
+    'תאריך הוספה', 'קריאה אחרונה'
+  ];
   const rows = S.books.map(b => {
-    const shelfNames = (b.shelves||[]).map(id=>(S.shelves.find(s=>s.id===id)||{}).name||'').filter(Boolean).join('; ');
-    const seriesNames = (b.series||[]).map(id=>(S.series.find(s=>s.id===id)||{}).name||'').filter(Boolean).join('; ');
-    return [b.title,b.author,b.publisher,b.year,b.genre,
+    const shelfNames  = (b.shelves||[]).map(id=>(S.shelves.find(s=>s.id===id)||{}).name||'').filter(Boolean).join('; ');
+    const shelfNums   = (b.shelves||[]).map(id => {
+      const name = (S.shelves.find(s=>s.id===id)||{}).name;
+      const num  = (b.shelfNums||{})[id];
+      return name && num != null ? `${name}: #${num}` : '';
+    }).filter(Boolean).join('; ');
+    const seriesNames = (b.series||[]).map(id=>(S.seriesList.find(s=>s.id===id)||{}).name||'').filter(Boolean).join('; ');
+    const seriesNums  = (b.series||[]).map(id => {
+      const name = (S.seriesList.find(s=>s.id===id)||{}).name;
+      const num  = (b.seriesNums||{})[id];
+      return name && num != null ? `${name}: #${num}` : '';
+    }).filter(Boolean).join('; ');
+    const typeLabel = ITEM_TYPE_LABEL[b.itemType||'book'] || 'ספר';
+    return [
+      b.title, b.subtitle, typeLabel, b.author, b.editor,
+      b.publisher || b.organization, b.year, b.genre, b.language, b.description,
+      b.journalPub, b.volume, b.issue, b.issueDate,
+      b.pageFrom, b.pageTo, b.doi, b.isbn, b.edition, b.issn,
       b.format==='pdf'?'PDF':'EPUB', b.totalPages||'', getProgress(b),
-      shelfNames, seriesNames, _dateStr(b.dateAdded), _dateStr(b.lastRead)
+      shelfNames, shelfNums, seriesNames, seriesNums,
+      _dateStr(b.dateAdded), _dateStr(b.lastRead)
     ].map(_csvVal).join(',');
   });
   const today = new Date().toLocaleDateString('he-IL').replace(/\//g,'-');
@@ -2633,10 +2670,10 @@ function exportCatalogCSV() {
 function exportCatalogJSON() {
   const data = {
     exportDate: new Date().toISOString(),
-    appVersion: 6,
+    appVersion: 7,
     books: S.books.map(({_fileData, ...b}) => b),
     shelves: S.shelves,
-    series: S.series
+    series: S.seriesList
   };
   const today = new Date().toLocaleDateString('he-IL').replace(/\//g,'-');
   _downloadFile(JSON.stringify(data, null, 2),
