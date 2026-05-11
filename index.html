@@ -839,6 +839,9 @@ function openNav() {
   <button class="nav-item" onclick="closeNav();exportReadingReportCSV()">📊 דוח קריאה CSV</button>
   <button class="nav-item" onclick="closeNav();openPrintReport()">🖨️ דוח להדפסה / PDF</button>
   <button class="nav-item" onclick="closeNav();importCatalogCSV()">📤 ייבוא מידע CSV</button>
+  <div class="nav-divider" style="margin:6px 0"></div>
+  <div class="nav-section-label">🔧 כלים</div>
+  <button class="nav-item" onclick="closeNav();autoDetectAllLanguages()">🌐 זיהוי שפה אוטומטי לכל הפריטים</button>
   ${S.books.length ? `<div class="nav-divider" style="margin:6px 0"></div>
     <button class="nav-item nav-danger" style="padding:8px 0" onclick="closeNav();deleteLibrary()">🗑 מחק את כל הספרייה</button>` : ''}`;
   $id('navDrawer').classList.add('open');
@@ -3452,6 +3455,51 @@ async function autoDetectLanguage(bookId) {
     if (lang) { $id('eLanguage').value = lang; showToast(`זוהתה שפה: ${lang} ✓`); }
     else showToast('לא זוהתה שפה אוטומטית');
   } catch(e) { showToast('שגיאה בזיהוי שפה'); }
+}
+
+async function autoDetectAllLanguages() {
+  const todo = S.books.filter(b => !b.language);
+  if (!todo.length) return showToast('לכל הפריטים כבר יש שפה מוגדרת');
+  showToast(`מזהה שפות ל-${todo.length} פריטים...`);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  let updated = 0, skipped = 0;
+  for (let i = 0; i < todo.length; i++) {
+    const book = todo[i];
+    try {
+      const fileRecord = await dbGet('files', book.id);
+      if (!fileRecord?.data) { skipped++; continue; }
+      let lang = '';
+      if (book.format === 'epub') {
+        const zip = await JSZip.loadAsync(fileRecord.data.slice(0));
+        const meta = await extractEpubMeta(zip);
+        lang = meta.language || '';
+        if (!lang) {
+          const textFile = Object.keys(zip.files).find(n => n.endsWith('.html') || n.endsWith('.xhtml') || n.endsWith('.htm'));
+          if (textFile) {
+            const txt = await zip.files[textFile].async('string');
+            lang = _detectLangFromText(txt.replace(/<[^>]+>/g, ' '));
+          }
+        }
+      } else if (book.format === 'pdf') {
+        const doc = await pdfjsLib.getDocument({ data: fileRecord.data.slice(0) }).promise;
+        try {
+          const { info } = await doc.getMetadata();
+          if (info?.Language) lang = _normalizeLang(info.Language);
+          if (!lang) {
+            const page = await doc.getPage(1);
+            const content = await page.getTextContent();
+            lang = _detectLangFromText(content.items.map(i => i.str).join(''));
+          }
+        } finally { doc.destroy(); }
+      }
+      if (lang) { book.language = lang; await dbPut('books', book); updated++; }
+      else skipped++;
+    } catch(e) { skipped++; }
+    if ((i + 1) % 5 === 0 || i === todo.length - 1)
+      showToast(`מעבד ${i+1}/${todo.length}...`);
+  }
+  renderLib();
+  showToast(updated ? `זוהתה שפה ל-${updated} פריטים ✓${skipped ? ` · ${skipped} ללא זיהוי` : ''}` : 'לא זוהתה שפה לאף פריט');
 }
 
 // ממיר קוד שפה (ISO) לשם קריא
