@@ -335,10 +335,17 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 textarea { resize: vertical; min-height: 80px; }
 .form-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 .form-section-title { font-weight: 700; font-size: 0.9rem; color: var(--primary); margin-bottom: 10px; }
-.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+.check-grid { display: flex; flex-direction: column; gap: 4px; }
 .check-label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 0.85rem; cursor: pointer; padding: 5px; border-radius: 6px; }
 .check-label:hover { background: var(--bg2); }
 .check-label input { width: 16px; height: 16px; accent-color: var(--primary); }
+.snum-row { display: flex; align-items: center; gap: 8px; padding: 3px 5px; border-radius: 6px; }
+.snum-row:hover { background: var(--bg2); }
+.snum-row .check-label { flex: 1; padding: 2px 0; }
+.snum-row .check-label:hover { background: none; }
+.snum-input { width: 58px; padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 0.83rem; text-align: center; }
+.snum-input:focus { border-color: var(--accent); outline: none; }
+.series-num-badge { display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: #2c1810; font-weight: 700; font-size: 0.72rem; padding: 1px 7px; border-radius: 10px; }
 .cover-preview-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
 .cover-options { display: flex; flex-direction: column; gap: 8px; flex: 1; }
 .custom-field-row { display: flex; gap: 6px; margin-bottom: 6px; }
@@ -868,15 +875,24 @@ function getSortedBooks() {
     const field = S.libInfoFilter.slice(8);
     books = books.filter(b => missingFields(b).includes(field));
   }
-  books.sort((a,b) => {
-    if (S.libSort==='title') return (a.title||'').localeCompare(b.title||'','he');
-    if (S.libSort==='author') return (a.author||'').localeCompare(b.author||'','he');
-    if (S.libSort==='year') return (b.year||0) - (a.year||0);
-    if (S.libSort==='publisher') return (a.publisher||'').localeCompare(b.publisher||'','he');
-    if (S.libSort==='format') return (a.format||'').localeCompare(b.format||'');
-    if (S.libSort==='progress') return getProgress(b) - getProgress(a);
-    return (b.dateAdded||0) - (a.dateAdded||0);
-  });
+  // כשמסנן לפי סדרה ומיון ברירת מחדל — ממיין לפי מספר בסדרה
+  if (S.libSeriesFilter && S.libSort === 'date') {
+    books.sort((a,b) => {
+      const na = (a.seriesNums||{})[S.libSeriesFilter] ?? 9999;
+      const nb = (b.seriesNums||{})[S.libSeriesFilter] ?? 9999;
+      return na - nb;
+    });
+  } else {
+    books.sort((a,b) => {
+      if (S.libSort==='title') return (a.title||'').localeCompare(b.title||'','he');
+      if (S.libSort==='author') return (a.author||'').localeCompare(b.author||'','he');
+      if (S.libSort==='year') return (b.year||0) - (a.year||0);
+      if (S.libSort==='publisher') return (a.publisher||'').localeCompare(b.publisher||'','he');
+      if (S.libSort==='format') return (a.format||'').localeCompare(b.format||'');
+      if (S.libSort==='progress') return getProgress(b) - getProgress(a);
+      return (b.dateAdded||0) - (a.dateAdded||0);
+    });
+  }
   return books;
 }
 
@@ -994,7 +1010,11 @@ function bookListCard(book) {
     ${sel ? `<input type="checkbox" class="book-select-cb" ${checked?'checked':''} onclick="event.stopPropagation();toggleBookSelect('${book.id}')">` : ''}
     ${bookCoverHtml(book, 'cover-sm')}
     <div class="book-info">
-      <div class="book-title">${esc(book.title || 'ללא כותרת')}</div>
+      <div style="display:flex;align-items:baseline;gap:6px">
+        <div class="book-title">${esc(book.title || 'ללא כותרת')}</div>
+        ${S.libSeriesFilter && (book.seriesNums||{})[S.libSeriesFilter] != null
+          ? `<span class="series-num-badge">#${(book.seriesNums||{})[S.libSeriesFilter]}</span>` : ''}
+      </div>
       ${book.subtitle ? `<div style="font-size:0.78rem;color:var(--muted);margin:-1px 0 2px">${esc(book.subtitle)}</div>` : ''}
       <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:3px 0">${metaLine}${book.language?`<span class="tag" style="background:var(--bg2);opacity:0.85">${esc(book.language)}</span>`:''}</div>
       <div class="tags-row">${shelfTags}</div>
@@ -1072,8 +1092,16 @@ function renderSeriesTab() {
     <button class="btn-primary" onclick="showSeriesModal()">צור סדרה ראשונה</button>
   </div>`;
   const cards = S.seriesList.map(ser => {
-    const booksIn = S.books.filter(b => (b.series||[]).includes(ser.id));
-    const miniCovers = booksIn.slice(0,5).map(b => bookCoverHtml(b,'cover-xs')).join('');
+    const booksIn = S.books
+      .filter(b => (b.series||[]).includes(ser.id))
+      .sort((a,b) => ((a.seriesNums||{})[ser.id]??9999) - ((b.seriesNums||{})[ser.id]??9999));
+    const miniCovers = booksIn.slice(0,6).map(b => {
+      const num = (b.seriesNums||{})[ser.id];
+      return `<div style="position:relative;display:inline-block">
+        ${bookCoverHtml(b,'cover-xs')}
+        ${num != null ? `<span style="position:absolute;bottom:0;inset-inline-start:0;background:rgba(0,0,0,0.7);color:#fff;font-size:0.58rem;padding:1px 4px;border-radius:0 3px 0 0;font-weight:700">#${num}</span>` : ''}
+      </div>`;
+    }).join('');
     const totalPct = booksIn.length ? Math.round(booksIn.reduce((s,b) => s+getProgress(b),0)/booksIn.length) : 0;
     return `<div class="shelf-card">
       <div class="shelf-header">
@@ -1086,7 +1114,7 @@ function renderSeriesTab() {
       <div class="shelf-covers">${miniCovers||'<span class="muted">ריק</span>'}</div>
       <div class="shelf-meta">${booksIn.length} ספרים • ${totalPct}% הושלם</div>
       <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn-text" onclick="S.libSeriesFilter='${ser.id}';S.libTab='books';renderLib()">הצג ספרים ←</button>
+        <button class="btn-text" onclick="S.libSeriesFilter='${ser.id}';S.libTab='books';renderLib(0)">הצג ספרים ←</button>
         <button class="btn-secondary" style="font-size:0.8rem;padding:4px 10px" onclick="showBookPicker('series','${ser.id}')">+ הוסף ספר</button>
       </div>
     </div>`;
@@ -1236,12 +1264,24 @@ function editBook(bookId) {
   if (!book) return;
   _customFieldCounter = 0;
 
-  const shelfOpts = S.shelves.map(s =>
-    `<label class="check-label"><input type="checkbox" name="shelf" value="${s.id}" ${(book.shelves||[]).includes(s.id)?'checked':''}> ${esc(s.name)}</label>`
-  ).join('');
-  const seriesOpts = S.seriesList.map(s =>
-    `<label class="check-label"><input type="checkbox" name="series" value="${s.id}" ${(book.series||[]).includes(s.id)?'checked':''}> ${esc(s.name)}</label>`
-  ).join('');
+  const shelfOpts = S.shelves.map(s => {
+    const checked = (book.shelves||[]).includes(s.id) ? 'checked' : '';
+    const num = (book.shelfNums||{})[s.id] ?? '';
+    return `<div class="snum-row">
+      <label class="check-label"><input type="checkbox" name="shelf" value="${s.id}" ${checked}> ${esc(s.name)}</label>
+      <span style="font-size:0.75rem;color:var(--muted)">#</span>
+      <input type="number" class="snum-input" data-id="${s.id}" data-type="shelf" value="${num}" placeholder="—" min="1" step="1" title="מיקום על המדף">
+    </div>`;
+  }).join('');
+  const seriesOpts = S.seriesList.map(s => {
+    const checked = (book.series||[]).includes(s.id) ? 'checked' : '';
+    const num = (book.seriesNums||{})[s.id] ?? '';
+    return `<div class="snum-row">
+      <label class="check-label"><input type="checkbox" name="series" value="${s.id}" ${checked}> ${esc(s.name)}</label>
+      <span style="font-size:0.75rem;color:var(--muted)">#</span>
+      <input type="number" class="snum-input" data-id="${s.id}" data-type="series" value="${num}" placeholder="—" min="0.5" step="0.5" title="מספר בסדרה">
+    </div>`;
+  }).join('');
   const cfHtml = Object.entries(book.customFields||{}).map(([k,v]) => {
     _customFieldCounter++;
     return `<div class="custom-field-row">
@@ -1315,7 +1355,17 @@ async function saveEditBook() {
   book.language = $id('eLanguage').value.trim();
   book.description = $id('eDescription').value.trim();
   book.shelves = [...document.querySelectorAll('input[name="shelf"]:checked')].map(el => el.value);
-  book.series = [...document.querySelectorAll('input[name="series"]:checked')].map(el => el.value);
+  book.series  = [...document.querySelectorAll('input[name="series"]:checked')].map(el => el.value);
+  const seriesNums = {}, shelfNums = {};
+  document.querySelectorAll('.snum-input').forEach(inp => {
+    const v = parseFloat(inp.value);
+    if (!isNaN(v) && v > 0) {
+      if (inp.dataset.type === 'series') seriesNums[inp.dataset.id] = v;
+      else shelfNums[inp.dataset.id] = v;
+    }
+  });
+  book.seriesNums = seriesNums;
+  book.shelfNums  = shelfNums;
   const cf = {};
   document.querySelectorAll('.custom-field-row').forEach(row => {
     const k = row.querySelector('.cf-key').value.trim();
