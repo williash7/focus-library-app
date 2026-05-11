@@ -2559,9 +2559,7 @@ function _parseAndProcessImport(text) {
       // השוואה: אם זהה לחלוטין — מדלגים
       if (exVal.toLowerCase() === inVal.toLowerCase()) continue;
 
-      // ברירת מחדל: אם השדה ריק → החלפה, אחרת → דלג (המשתמש יבחר)
-      const defaultAction = exVal ? 'skip' : 'replace';
-      changes.push({ field: fd.key, label: fd.label, multi: fd.multi, existing: exVal, incoming: inVal, action: defaultAction });
+      changes.push({ field: fd.key, label: fd.label, multi: fd.multi, existing: exVal, incoming: inVal, action: 'replace' });
     }
 
     // מדפים — מציג שמות, ממיר ל-IDs בעת שמירה
@@ -2572,7 +2570,7 @@ function _parseAndProcessImport(text) {
         const exStr = exNames.join('; ');
         const inStr = inShelfNames.join('; ');
         if (exStr.toLowerCase() !== inStr.toLowerCase())
-          changes.push({ field: 'shelves', label: 'מדפים', multi: true, type: 'shelf', existing: exStr, incoming: inStr, action: exStr ? 'skip' : 'replace' });
+          changes.push({ field: 'shelves', label: 'מדפים', multi: true, type: 'shelf', existing: exStr, incoming: inStr, action: 'replace' });
       }
     }
     // סדרות
@@ -2583,7 +2581,7 @@ function _parseAndProcessImport(text) {
         const exStr = exNames.join('; ');
         const inStr = inSeriesNames.join('; ');
         if (exStr.toLowerCase() !== inStr.toLowerCase())
-          changes.push({ field: 'series', label: 'סדרות', multi: true, type: 'series', existing: exStr, incoming: inStr, action: exStr ? 'skip' : 'replace' });
+          changes.push({ field: 'series', label: 'סדרות', multi: true, type: 'series', existing: exStr, incoming: inStr, action: 'replace' });
       }
     }
 
@@ -2619,8 +2617,15 @@ function _showImportModal(notFound) {
         </div>
       </div>`;
     }).join('');
+    const bookKey = book.id;
     return `<div class="imp-book-card">
-      <div class="imp-book-title">📚 ${esc(book.title)}</div>
+      <div class="imp-book-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span>📚 ${esc(book.title)}</span>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="imp-act-btn replace active" onclick="setBulkAction('${bookKey}','replace',this)" style="font-size:0.72rem">החלף הכל</button>
+          <button class="imp-act-btn skip" onclick="setBulkAction('${bookKey}','skip',this)" style="font-size:0.72rem">דלג הכל</button>
+        </div>
+      </div>
       ${fieldRows}
     </div>`;
   }).join('');
@@ -2652,6 +2657,21 @@ function _showImportModal(notFound) {
       </div>
     </div>
   </div>`);
+}
+
+function setBulkAction(bookId, action, clicked) {
+  const item = _importData.find(it => it.book.id === bookId);
+  if (!item) return;
+  item.changes.forEach(ch => { ch.action = action; });
+  const card = clicked.closest('.imp-book-card');
+  card.querySelectorAll('.imp-field-actions .imp-act-btn').forEach(b => {
+    b.classList.remove('active');
+    if (b.classList.contains(action)) b.classList.add('active');
+  });
+  card.querySelectorAll('.imp-book-title .imp-act-btn').forEach(b => {
+    b.classList.remove('active');
+    if (b.classList.contains(action)) b.classList.add('active');
+  });
 }
 
 function setImportAction(key, action, btn) {
