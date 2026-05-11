@@ -379,6 +379,33 @@ textarea { resize: vertical; min-height: 80px; }
     .lib-header { padding-top: calc(12px + env(safe-area-inset-top)); }
   }
 
+/* ── IMPORT MODAL ── */
+.imp-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.imp-modal-box { background: var(--card); border-radius: 16px; width: 100%; max-width: 680px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
+.imp-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--card); z-index: 1; flex-shrink: 0; }
+.imp-modal-head h2 { font-size: 1.05rem; color: var(--text); }
+.imp-modal-hint { padding: 8px 16px; border-bottom: 1px solid var(--border); font-size: 0.78rem; color: var(--muted); flex-shrink: 0; }
+.imp-modal-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.imp-modal-foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; flex-shrink: 0; }
+.imp-book-card { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.imp-book-title { font-weight: 700; font-size: 0.9rem; color: var(--primary); padding: 10px 14px 8px; border-bottom: 1px solid var(--border); background: var(--card); }
+.imp-field-row { display: grid; grid-template-columns: 72px 1fr 18px 1fr auto; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+@media (max-width: 520px) { .imp-field-row { grid-template-columns: 64px minmax(0,1fr) 14px minmax(0,1fr) auto; gap: 4px; padding: 7px 10px; font-size: 0.78rem; } .imp-act-btn { padding: 3px 6px; font-size: 0.72rem; } }
+.imp-field-row:last-child { border-bottom: none; }
+.imp-field-label { font-weight: 600; color: var(--muted); white-space: nowrap; font-size: 0.78rem; }
+.imp-field-existing { color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp-field-existing em { font-style: normal; opacity: 0.5; }
+.imp-field-arrow { color: var(--accent); font-size: 0.9rem; text-align: center; }
+.imp-field-incoming { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp-field-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.imp-act-btn { padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg2); color: var(--muted); cursor: pointer; font-size: 0.75rem; white-space: nowrap; transition: all 0.15s; }
+.imp-act-btn:hover { border-color: var(--primary); color: var(--primary); }
+.imp-act-btn.active.skip { background: var(--bg2); color: var(--muted); border-color: var(--muted); }
+.imp-act-btn.active.replace { background: #2980b9; color: white; border-color: #2980b9; }
+.imp-act-btn.active.add { background: #27ae60; color: white; border-color: #27ae60; }
+.imp-summary { font-size: 0.82rem; color: var(--muted); padding: 4px 0; }
+.imp-not-found { background: var(--bg2); border-radius: 8px; padding: 8px 12px; font-size: 0.8rem; color: var(--muted); }
+
 </style>
 </head>
 <body>
@@ -688,7 +715,8 @@ function cycleTheme() {
 
 // ═══ LIBRARY ═══
 // מרנדר את ממשק הספרייה הראשי כולל כפתורי ניווט ובקרות
-function renderLib() {
+function renderLib(scrollTo) {
+  const prevScroll = scrollTo !== undefined ? scrollTo : ($id('libContent')?.scrollTop ?? 0);
   const tabLabels = { books:'📚 ספרים', shelves:'🗄 מדפים', series:'📖 סדרות', dictionary:'📒 מילון', stats:'📊 סטטיסטיקות' };
   const isBooks = S.libTab === 'books';
 
@@ -721,24 +749,26 @@ function renderLib() {
   </div>
   ${controlsBar}
   <div id="libContent" style="flex:1;overflow-y:auto;padding:16px"></div>`;
-  renderTabContent();
+  renderTabContent(prevScroll);
 }
 
 // מחליף את הלשונית הפעילה בספרייה
 function switchTab(tab) {
   S.libTab = tab;
-  renderLib();
+  renderLib(0);
 }
 
 // מרנדר את תוכן הלשונית הפעילה בתוך אזור התוכן
-function renderTabContent() {
+function renderTabContent(scrollTo) {
   const el = $id('libContent');
   if (!el) return;
+  const prevScroll = scrollTo !== undefined ? scrollTo : el.scrollTop;
   if (S.libTab === 'books') el.innerHTML = renderBooksTab();
   else if (S.libTab === 'shelves') el.innerHTML = renderShelvesTab();
   else if (S.libTab === 'series') el.innerHTML = renderSeriesTab();
   else if (S.libTab === 'dictionary') el.innerHTML = renderGlobalDictTab();
   else if (S.libTab === 'stats') { el.innerHTML = '<div class="muted" style="text-align:center;padding:40px">⏳ טוען...</div>'; loadAndRenderLibStats(); }
+  el.scrollTop = prevScroll;
 }
 
 // ═══ FIELD UTILS ═══
@@ -765,11 +795,12 @@ function openNav() {
     ${themes.map(([t,l])=>`<button class="nav-theme-btn ${S.theme===t?'active':''}" onclick="S.theme='${t}';localStorage.setItem('theme','${t}');applyTheme();document.querySelectorAll('.nav-theme-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${l}</button>`).join('')}
   </div>
   <div class="nav-divider" style="margin:6px 0"></div>
-  <div class="nav-section-label">📥 ייצוא</div>
+  <div class="nav-section-label">📥 ייצוא / ייבוא</div>
   <button class="nav-item" onclick="closeNav();exportCatalogCSV()">📋 קטלוג ל-CSV</button>
   <button class="nav-item" onclick="closeNav();exportCatalogJSON()">💾 גיבוי JSON</button>
   <button class="nav-item" onclick="closeNav();exportReadingReportCSV()">📊 דוח קריאה CSV</button>
   <button class="nav-item" onclick="closeNav();openPrintReport()">🖨️ דוח להדפסה / PDF</button>
+  <button class="nav-item" onclick="closeNav();importCatalogCSV()">📤 ייבוא מידע CSV</button>
   ${S.books.length ? `<div class="nav-divider" style="margin:6px 0"></div>
     <button class="nav-item nav-danger" style="padding:8px 0" onclick="closeNav();deleteLibrary()">🗑 מחק את כל הספרייה</button>` : ''}`;
   $id('navDrawer').classList.add('open');
@@ -964,7 +995,8 @@ function bookListCard(book) {
     ${bookCoverHtml(book, 'cover-sm')}
     <div class="book-info">
       <div class="book-title">${esc(book.title || 'ללא כותרת')}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:3px 0">${metaLine}</div>
+      ${book.subtitle ? `<div style="font-size:0.78rem;color:var(--muted);margin:-1px 0 2px">${esc(book.subtitle)}</div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:3px 0">${metaLine}${book.language?`<span class="tag" style="background:var(--bg2);opacity:0.85">${esc(book.language)}</span>`:''}</div>
       <div class="tags-row">${shelfTags}</div>
       <div class="progress-bar-wrap"><div class="progress-bar" style="width:${pct}%"></div></div>
       <div class="progress-label">${pct}%${book.format?' • '+book.format.toUpperCase():''}</div>
@@ -1157,10 +1189,13 @@ async function handleFiles(files) {
         const [cover, meta] = await Promise.all([extractEpubCoverFromZip(zip), extractEpubMeta(zip)]);
         if (cover) book.coverUrl = cover;
         if (meta.title) book.title = meta.title;
+        if (meta.subtitle) book.subtitle = meta.subtitle;
         if (meta.author) book.author = meta.author;
         if (meta.publisher) book.publisher = meta.publisher;
         if (meta.year) book.year = meta.year;
         if (meta.genre) book.genre = meta.genre;
+        if (meta.language) book.language = meta.language;
+        if (meta.description) book.description = meta.description;
       } catch(e) { console.warn('EPUB error', e); }
     }
     await dbPut('files', { id: book.id, data: ab });
@@ -1220,10 +1255,15 @@ function editBook(bookId) {
   <input type="hidden" id="editBookId" value="${book.id}">
   <div class="form-grid">
     <label>כותרת<input type="text" id="eTitle" value="${esc(book.title||'')}"></label>
+    <label>תת כותרת<input type="text" id="eSubtitle" value="${esc(book.subtitle||'')}" placeholder="אם קיימת"></label>
     <label>מחבר<input type="text" id="eAuthor" value="${esc(book.author||'')}"></label>
     <label>הוצאה לאור<input type="text" id="ePublisher" value="${esc(book.publisher||'')}"></label>
     <label>שנת הוצאה<input type="number" id="eYear" value="${esc(book.year||'')}" min="1000" max="2100"></label>
+    <label>שפה<input type="text" id="eLanguage" value="${esc(book.language||'')}" placeholder="עברית / English ..."></label>
     <label style="grid-column:1/-1">ז׳אנר<input type="text" id="eGenre" value="${esc(book.genre||'')}"></label>
+    <label style="grid-column:1/-1">תקציר
+      <textarea id="eDescription" rows="4" style="resize:vertical;font-family:inherit;font-size:0.9rem;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);width:100%">${esc(book.description||'')}</textarea>
+    </label>
   </div>
   <div class="form-section">
     <div class="form-section-title">🖼 כריכה</div>
@@ -1267,10 +1307,13 @@ async function saveEditBook() {
   const book = S.books.find(b => b.id === id);
   if (!book) return;
   book.title = $id('eTitle').value;
+  book.subtitle = $id('eSubtitle').value.trim();
   book.author = $id('eAuthor').value;
   book.publisher = $id('ePublisher').value;
   book.year = $id('eYear').value;
   book.genre = $id('eGenre').value;
+  book.language = $id('eLanguage').value.trim();
+  book.description = $id('eDescription').value.trim();
   book.shelves = [...document.querySelectorAll('input[name="shelf"]:checked')].map(el => el.value);
   book.series = [...document.querySelectorAll('input[name="series"]:checked')].map(el => el.value);
   const cf = {};
@@ -1521,6 +1564,7 @@ async function openBook(bookId) {
   if (!book) return;
   const fileRecord = await dbGet('files', bookId);
   if (!fileRecord?.data) return alert('נתוני הספר חסרים. הוסף את הקובץ מחדש.');
+  S._libScrollTop = $id('libContent')?.scrollTop ?? 0;
   if (S._pdfObserver) { S._pdfObserver.disconnect(); S._pdfObserver = null; }
   S.currentBook = book;
   S.currentBook._fileData = fileRecord.data;
@@ -1571,7 +1615,9 @@ async function closeReader() {
   if (S.currentBook) S.currentBook._fileData = null;
   S.currentBook = null;
   S.pdfDoc = null;
-  renderLib();
+  const savedScroll = S._libScrollTop ?? 0;
+  S._libScrollTop = null;
+  renderLib(savedScroll);
 }
 
 // מרנדר את ממשק הקורא כולל כותרת, תוכן ופאנל צדדי
@@ -2061,6 +2107,284 @@ function _csvVal(v) {
 
 function _dateStr(ts) {
   return ts ? new Date(ts).toLocaleDateString('he-IL') : '';
+}
+
+// ═══ IMPORT CSV ═══
+let _importData = [];
+
+function importCatalogCSV() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.csv,.tsv,.txt';
+  input.onchange = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    _parseAndProcessImport(text);
+  };
+  input.click();
+}
+
+// מנתח CSV גנרי עם תמיכה בשדות מצוטטים
+function _parseCSVRows(text) {
+  const clean = text.replace(/^﻿/, '');
+  const lines = clean.split(/\r?\n/);
+  const rows = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const fields = [];
+    let field = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { if (inQ && line[i+1] === '"') { field += '"'; i++; } else inQ = !inQ; }
+      else if (c === ',' && !inQ) { fields.push(field.trim()); field = ''; }
+      else field += c;
+    }
+    fields.push(field.trim());
+    rows.push(fields);
+  }
+  return rows;
+}
+
+// מזהה עמודות רלוונטיות מכותרות הטבלה
+function _detectImportColumns(headers) {
+  const map = { genreCols: [] };
+  headers.forEach((h, i) => {
+    const n = h.replace(/['"״]/g, '').trim().toLowerCase();
+    if (['שם','title','כותרת','book title','שם ספר'].includes(n)) map.title = i;
+    else if (['מחבר','author','authors','מחברים'].includes(n)) map.author = i;
+    else if (['הוצאה לאור','הוצאה','publisher','publishers'].includes(n)) map.publisher = i;
+    else if (['שנה','year','שנת הוצאה','publication year'].includes(n)) map.year = i;
+    else if (['עמודים','pages','total pages','מספר עמודים'].includes(n)) map.totalPages = i;
+    else if (['שפה','language','lang'].includes(n)) map.language = i;
+    else if (['תת כותרת','subtitle','תת-כותרת'].includes(n)) map.subtitle = i;
+    else if (['מדפים','shelves','shelf','מדף'].includes(n)) map.shelves = i;
+    else if (['סדרות','series'].includes(n)) map.series = i;
+    else if (n.includes("ז'אנר") || n.includes("ז'נר") || n.includes('genre') || n.includes('ז') && n.includes('אנר')) {
+      map.genreCols.push(i);
+    }
+  });
+  return map;
+}
+
+// מנרמל ערך רב-שדות (מפצל לפי ; , / |) ומסיר כפילויות
+function _normalizeMultiVal(val) {
+  if (!val) return [];
+  return [...new Set(val.split(/[;,|/]+/).map(s => s.trim()).filter(Boolean))];
+}
+
+function _parseAndProcessImport(text) {
+  const rows = _parseCSVRows(text);
+  if (rows.length < 2) return showToast('קובץ CSV ריק או לא תקין');
+
+  const colMap = _detectImportColumns(rows[0]);
+  if (colMap.title === undefined) return showToast('לא נמצאה עמודת שם ספר בקובץ (צפוי: "שם" או "title")');
+
+  const bookByTitle = new Map();
+  for (const b of S.books) bookByTitle.set((b.title || '').trim().toLowerCase(), b);
+
+  const FIELDS = [
+    { key: 'author',    label: 'מחבר',       multi: true },
+    { key: 'publisher', label: 'הוצאה לאור', multi: true },
+    { key: 'year',      label: 'שנה',         multi: false },
+    { key: 'totalPages',label: 'עמודים',      multi: false },
+    { key: 'genre',     label: "ז'אנר",       multi: true },
+    { key: 'language',  label: 'שפה',         multi: false },
+    { key: 'subtitle',  label: 'תת כותרת',   multi: false },
+  ];
+
+  const importData = [];
+  const notFound = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const title = colMap.title !== undefined ? (row[colMap.title] || '').trim() : '';
+    if (!title) continue;
+
+    const book = bookByTitle.get(title.toLowerCase());
+    if (!book) { notFound.push(title); continue; }
+
+    // איסוף ערכים נכנסים
+    const incoming = {};
+    if (colMap.author !== undefined) incoming.author = (row[colMap.author] || '').trim();
+    if (colMap.publisher !== undefined) incoming.publisher = (row[colMap.publisher] || '').trim();
+    if (colMap.year !== undefined) incoming.year = (row[colMap.year] || '').trim();
+    if (colMap.totalPages !== undefined) incoming.totalPages = (row[colMap.totalPages] || '').trim();
+    if (colMap.language !== undefined) incoming.language = (row[colMap.language] || '').trim();
+    if (colMap.subtitle !== undefined) incoming.subtitle = (row[colMap.subtitle] || '').trim();
+
+    // מיזוג כל עמודות ז'אנר לשדה אחד
+    if (colMap.genreCols.length) {
+      const genreVals = colMap.genreCols
+        .flatMap(ci => _normalizeMultiVal(row[ci] || ''));
+      const unique = [...new Set(genreVals)];
+      if (unique.length) incoming.genre = unique.join('; ');
+    }
+
+    // בניית רשימת שינויים לכל שדה
+    const changes = [];
+    for (const fd of FIELDS) {
+      const inVal = incoming[fd.key];
+      if (!inVal) continue;
+      const exVal = (book[fd.key] != null ? String(book[fd.key]) : '').trim();
+
+      // השוואה: אם זהה לחלוטין — מדלגים
+      if (exVal.toLowerCase() === inVal.toLowerCase()) continue;
+
+      // ברירת מחדל: אם השדה ריק → החלפה, אחרת → דלג (המשתמש יבחר)
+      const defaultAction = exVal ? 'skip' : 'replace';
+      changes.push({ field: fd.key, label: fd.label, multi: fd.multi, existing: exVal, incoming: inVal, action: defaultAction });
+    }
+
+    // מדפים — מציג שמות, ממיר ל-IDs בעת שמירה
+    if (colMap.shelves !== undefined) {
+      const inShelfNames = _normalizeMultiVal(row[colMap.shelves] || '');
+      if (inShelfNames.length) {
+        const exNames = (book.shelves||[]).map(id => (S.shelves.find(s=>s.id===id)||{}).name).filter(Boolean);
+        const exStr = exNames.join('; ');
+        const inStr = inShelfNames.join('; ');
+        if (exStr.toLowerCase() !== inStr.toLowerCase())
+          changes.push({ field: 'shelves', label: 'מדפים', multi: true, type: 'shelf', existing: exStr, incoming: inStr, action: exStr ? 'skip' : 'replace' });
+      }
+    }
+    // סדרות
+    if (colMap.series !== undefined) {
+      const inSeriesNames = _normalizeMultiVal(row[colMap.series] || '');
+      if (inSeriesNames.length) {
+        const exNames = (book.series||[]).map(id => (S.seriesList.find(s=>s.id===id)||{}).name).filter(Boolean);
+        const exStr = exNames.join('; ');
+        const inStr = inSeriesNames.join('; ');
+        if (exStr.toLowerCase() !== inStr.toLowerCase())
+          changes.push({ field: 'series', label: 'סדרות', multi: true, type: 'series', existing: exStr, incoming: inStr, action: exStr ? 'skip' : 'replace' });
+      }
+    }
+
+    if (changes.length) importData.push({ book, changes });
+  }
+
+  _importData = importData;
+  if (!importData.length && !notFound.length) return showToast('כל המידע בקובץ זהה לנתונים הקיימים — אין מה לעדכן');
+  _showImportModal(notFound);
+}
+
+function _showImportModal(notFound) {
+  $id('importModal')?.remove();
+
+  const bookRows = _importData.map(({ book, changes }) => {
+    const fieldRows = changes.map(ch => {
+      const key = `${book.id}__${ch.field}`;
+      const existingHtml = ch.existing
+        ? `<span>${esc(ch.existing)}</span>`
+        : `<em>ריק</em>`;
+      const addBtn = ch.multi
+        ? `<button class="imp-act-btn add ${ch.action==='add'?'active':''}" onclick="setImportAction('${key}','add',this)">הוסף</button>`
+        : '';
+      return `<div class="imp-field-row">
+        <span class="imp-field-label">${ch.label}</span>
+        <span class="imp-field-existing">${existingHtml}</span>
+        <span class="imp-field-arrow">→</span>
+        <span class="imp-field-incoming">${esc(ch.incoming)}</span>
+        <div class="imp-field-actions">
+          <button class="imp-act-btn skip ${ch.action==='skip'?'active':''}" onclick="setImportAction('${key}','skip',this)">דלג</button>
+          <button class="imp-act-btn replace ${ch.action==='replace'?'active':''}" onclick="setImportAction('${key}','replace',this)">החלף</button>
+          ${addBtn}
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="imp-book-card">
+      <div class="imp-book-title">📚 ${esc(book.title)}</div>
+      ${fieldRows}
+    </div>`;
+  }).join('');
+
+  const notFoundHtml = notFound.length
+    ? `<div class="imp-not-found">⚠️ לא נמצאו בספרייה (${notFound.length}): ${notFound.slice(0,5).map(esc).join(', ')}${notFound.length>5?'...':''}</div>`
+    : '';
+
+  const summary = `${_importData.length} ספרים עם שינויים${notFound.length ? ` | ${notFound.length} לא נמצאו` : ''}`;
+
+  document.body.insertAdjacentHTML('beforeend', `
+  <div class="imp-modal-overlay" id="importModal">
+    <div class="imp-modal-box">
+      <div class="imp-modal-head">
+        <h2>📤 ייבוא מידע מ-CSV</h2>
+        <button class="icon-btn" onclick="closeImportModal()">✕</button>
+      </div>
+      <div class="imp-modal-hint">
+        <strong>דלג</strong> — לא לשנות &nbsp;|&nbsp; <strong>החלף</strong> — מחליף ערך קיים &nbsp;|&nbsp; <strong>הוסף</strong> — מוסיף לערך הקיים עם ;
+        <br><span class="imp-summary">${summary}</span>
+      </div>
+      <div class="imp-modal-body">
+        ${notFoundHtml}
+        ${bookRows || '<div class="imp-not-found">אין ספרים מתאימים לעדכון</div>'}
+      </div>
+      <div class="imp-modal-foot">
+        <button class="btn-secondary" onclick="closeImportModal()">ביטול</button>
+        <button class="btn-primary" onclick="applyImport()">✓ שמור שינויים</button>
+      </div>
+    </div>
+  </div>`);
+}
+
+function setImportAction(key, action, btn) {
+  const sepIdx = key.indexOf('__');
+  const bookId = key.slice(0, sepIdx);
+  const field = key.slice(sepIdx + 2);
+  const item = _importData.find(it => it.book.id === bookId);
+  if (!item) return;
+  const ch = item.changes.find(c => c.field === field);
+  if (!ch) return;
+  ch.action = action;
+  btn.closest('.imp-field-actions').querySelectorAll('.imp-act-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function closeImportModal() {
+  $id('importModal')?.remove();
+  _importData = [];
+}
+
+// מוצא מדף לפי שם או יוצר חדש
+async function _getOrCreateShelf(name) {
+  let s = S.shelves.find(x => x.name.toLowerCase() === name.toLowerCase());
+  if (!s) { s = { id: uid(), name }; await dbPut('shelves', s); S.shelves.push(s); }
+  return s.id;
+}
+// מוצא סדרה לפי שם או יוצרת חדשה
+async function _getOrCreateSeries(name) {
+  let s = S.seriesList.find(x => x.name.toLowerCase() === name.toLowerCase());
+  if (!s) { s = { id: uid(), name }; await dbPut('series', s); S.seriesList.push(s); }
+  return s.id;
+}
+
+async function applyImport() {
+  let count = 0;
+  for (const { book, changes } of _importData) {
+    let changed = false;
+    for (const ch of changes) {
+      if (ch.action === 'skip') continue;
+      if (ch.type === 'shelf' || ch.type === 'series') {
+        const names = _normalizeMultiVal(ch.incoming);
+        const getOrCreate = ch.type === 'shelf' ? _getOrCreateShelf : _getOrCreateSeries;
+        const ids = await Promise.all(names.map(getOrCreate));
+        if (ch.action === 'replace') book[ch.field] = ids;
+        else if (ch.action === 'add') book[ch.field] = [...new Set([...(book[ch.field]||[]), ...ids])];
+        changed = true;
+      } else if (ch.action === 'replace') {
+        book[ch.field] = ch.incoming;
+        changed = true;
+      } else if (ch.action === 'add') {
+        const exVals = _normalizeMultiVal(book[ch.field] || '');
+        const inVals = _normalizeMultiVal(ch.incoming);
+        book[ch.field] = [...new Set([...exVals, ...inVals])].join('; ');
+        changed = true;
+      }
+    }
+    if (changed) { await dbPut('books', bookMeta(book)); count++; }
+  }
+  closeImportModal();
+  if (count) { renderLib(); showToast(`✓ עודכנו ${count} ספרים`); }
+  else showToast('לא בוצעו שינויים');
 }
 
 function exportCatalogCSV() {
@@ -2818,6 +3142,15 @@ async function extractPdfCover(data) {
 }
 
 
+// ממיר קוד שפה (ISO) לשם קריא
+function _normalizeLang(code) {
+  if (!code) return '';
+  const map = { he:'עברית', iw:'עברית', en:'English', en_us:'English', en_gb:'English',
+    fr:'Français', de:'Deutsch', es:'Español', ar:'العربية', ru:'Русский',
+    yi:'יידיש', la:'Latin', it:'Italiano', pt:'Português', nl:'Nederlands', pl:'Polski' };
+  return map[code.toLowerCase().replace('-','_')] || code;
+}
+
 // ═══ EPUB META ═══
 // חולץ מטאדאטה של EPUB כגון כותרת, מחבר ושנה מקובץ ה-OPF
 async function extractEpubMeta(zip) {
@@ -2836,7 +3169,9 @@ async function extractEpubMeta(zip) {
         || doc.querySelector(tag))?.textContent?.trim() || '';
     };
     const year = dc('date').match(/(\d{4})/)?.[1] || '';
-    return { title: dc('title'), author: dc('creator'), publisher: dc('publisher'), year, genre: dc('subject') };
+    const rawLang = dc('language');
+    const language = _normalizeLang(rawLang);
+    return { title: dc('title'), subtitle: dc('subtitle'), author: dc('creator'), publisher: dc('publisher'), year, genre: dc('subject'), language, description: dc('description') };
   } catch(e) { return {}; }
 }
 
