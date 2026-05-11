@@ -1013,7 +1013,7 @@ function renderBooksTab() {
   const typeBar = `<div class="type-filter-bar">${ITEM_TYPES.map(({v,l}) => {
     const active = (S.libTypeFilter ?? null) === v;
     const count = v === null ? S.books.length : S.books.filter(b=>(b.itemType||'book')===v).length;
-    return `<button class="type-filter-btn${active?' active':''}" onclick="S.libTypeFilter=${JSON.stringify(v)};renderTabContent()">${l} <span style="opacity:0.65;font-size:0.75em">(${count})</span></button>`;
+    return `<button class="type-filter-btn${active?' active':''}" onclick="S.libTypeFilter=${v===null?'null':`'${v}'`};renderTabContent()">${l} <span style="opacity:0.65;font-size:0.75em">(${count})</span></button>`;
   }).join('')}</div>`;
 
   const panel = renderInfoPanel();
