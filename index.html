@@ -396,6 +396,43 @@ textarea { resize: vertical; min-height: 80px; }
     .lib-header { padding-top: calc(12px + env(safe-area-inset-top)); }
   }
 
+/* ── REDESIGNED TOPBAR + SEARCHBAR ── */
+.lib-topbar { display:flex; align-items:center; gap:6px; padding:8px 12px; background:var(--card); border-bottom:1px solid var(--border); flex-shrink:0; }
+.lib-tabs-scroll { display:flex; gap:4px; flex:1; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.lib-tabs-scroll::-webkit-scrollbar { display:none; }
+.tab-pill { display:flex; align-items:center; gap:4px; padding:5px 11px; border-radius:18px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:0.82rem; white-space:nowrap; transition:all 0.18s; flex-shrink:0; }
+.tab-pill.active { background:var(--primary); color:white; border-color:var(--primary); }
+.tab-pill:not(.active):hover { border-color:var(--primary); color:var(--primary); }
+.topbar-add { width:30px; height:30px; border-radius:50%; background:var(--accent); color:white; border:none; font-size:1.25rem; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:transform 0.15s; font-weight:700; }
+.topbar-add:hover { transform:scale(1.1); }
+.lib-searchbar { display:flex; align-items:center; gap:6px; padding:6px 12px 8px; background:var(--card); flex-shrink:0; border-bottom:1px solid var(--border); }
+.filter-btn { position:relative; width:34px; height:34px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:1rem; flex-shrink:0; transition:all 0.15s; display:flex; align-items:center; justify-content:center; }
+.filter-btn.has-filters { background:var(--primary); color:white; border-color:var(--primary); }
+.filter-btn:not(.has-filters):hover { border-color:var(--primary); color:var(--primary); }
+.filter-count-badge { position:absolute; top:-5px; left:-5px; min-width:16px; height:16px; background:var(--accent); border-radius:8px; font-size:0.65rem; color:#1a1612; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px; }
+.lib-count-bar { font-size:0.76rem; color:var(--muted); padding:5px 16px 0; flex-shrink:0; }
+
+/* ── FILTER PANEL (slide-up) ── */
+.fp-overlay { position:fixed; inset:0; z-index:400; pointer-events:none; }
+.fp-overlay.open { pointer-events:all; }
+.fp-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.4); opacity:0; transition:opacity 0.25s; }
+.fp-overlay.open .fp-backdrop { opacity:1; }
+.fp-box { position:absolute; bottom:0; left:0; right:0; background:var(--card); border-radius:18px 18px 0 0; max-height:82vh; display:flex; flex-direction:column; transform:translateY(100%); transition:transform 0.3s cubic-bezier(0.32,0.72,0,1); }
+.fp-overlay.open .fp-box { transform:translateY(0); }
+.fp-handle { width:40px; height:4px; background:var(--border); border-radius:2px; margin:10px auto 0; flex-shrink:0; }
+.fp-head { padding:10px 20px 10px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); flex-shrink:0; }
+.fp-head span { font-weight:700; font-size:0.95rem; color:var(--primary); }
+.fp-body { flex:1; overflow-y:auto; padding:14px 20px 8px; display:flex; flex-direction:column; gap:14px; }
+.fp-foot { padding:10px 20px 16px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end; flex-shrink:0; }
+.fp-sec { display:flex; flex-direction:column; gap:7px; }
+.fp-lbl { font-size:0.69rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
+.fp-chips { display:flex; gap:5px; flex-wrap:wrap; }
+.fp-chip { padding:5px 11px; border-radius:14px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; font-size:0.8rem; white-space:nowrap; transition:all 0.15s; }
+.fp-chip.active { background:var(--primary); color:white; border-color:var(--primary); }
+.fp-chip:not(.active):hover { border-color:var(--primary); color:var(--primary); }
+.fp-2col { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.fp-select { padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:0.88rem; cursor:pointer; width:100%; font-family:inherit; }
+
 /* ── IMPORT MODAL ── */
 .imp-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .imp-modal-box { background: var(--card); border-radius: 16px; width: 100%; max-width: 680px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
@@ -433,7 +470,7 @@ textarea { resize: vertical; min-height: 80px; }
 <!-- NAV DRAWER -->
 <div id="navDrawer" class="nav-drawer">
   <div class="nav-drawer-header">
-    <span class="nav-drawer-title">📚 ספריית הפוקוס</span>
+    <span class="nav-drawer-title">☰ תפריט</span>
     <button class="icon-btn" onclick="closeNav()">✕</button>
   </div>
   <nav id="navLinks" class="nav-links"></nav>
@@ -735,57 +772,29 @@ function cycleTheme() {
 // מרנדר את ממשק הספרייה הראשי כולל כפתורי ניווט ובקרות
 function renderLib(scrollTo) {
   const prevScroll = scrollTo !== undefined ? scrollTo : ($id('libContent')?.scrollTop ?? 0);
-  const tabLabels = { books:'📚 ספרים', shelves:'🗄 מדפים', series:'📖 סדרות', dictionary:'📒 מילון', stats:'📊 סטטיסטיקות' };
   const isBooks = S.libTab === 'books';
-
-  const sortOpts = [
-    ['date','תאריך הוספה'],['title','שם'],['author','מחבר'],
-    ['year','שנה'],['publisher','הוצאה לאור'],['format','פורמט'],['progress','התקדמות'],
-    ['issueDate','תאריך גיליון'],['volume','כרך / גיליון'],
-  ].map(([v,l]) => `<option value="${v}" ${S.libSort===v?'selected':''}>${l}</option>`).join('');
-
-  const groupOpts = [
-    ['','ללא קיבוץ'],['firstLetter','לפי אות ראשונה'],['author','לפי מחבר'],
-    ['year','לפי שנה'],['genre','לפי ז׳אנר'],['publisher','לפי הוצאה'],
-    ['language','לפי שפה'],['type','לפי סוג'],
-  ].map(([v,l]) => `<option value="${v}" ${(S.libGroupBy||'')===v?'selected':''}>${l}</option>`).join('');
-
-  const uniqueLangs = [...new Set(S.books.map(b=>b.language||'').filter(Boolean))].sort();
-  const langOpts = uniqueLangs.map(l =>
-    `<option value="${esc(l)}" ${S.libLangFilter===l?'selected':''}>${esc(l)}</option>`).join('');
-  const anyFilter = S.libFormatFilter || S.libLangFilter;
-
-  const controlsBar = !isBooks ? '' : `
-  <div class="lib-controls-bar">
-    <input type="search" class="search-input" style="flex:1;min-width:100px" placeholder="🔍 חיפוש..."
+  const tabDefs = [['books','📚','ספרים'],['shelves','🗄','מדפים'],['series','📖','סדרות'],['dictionary','📒','מילון'],['stats','📊','סטטיסטיקות']];
+  const tabs = tabDefs.map(([t,icon,label]) =>
+    `<button class="tab-pill${S.libTab===t?' active':''}" onclick="switchTab('${t}')" title="${label}">${icon} ${label}</button>`
+  ).join('');
+  const nFilters = [S.libTypeFilter, S.libFormatFilter, S.libLangFilter, S.libGroupBy].filter(Boolean).length;
+  const badgeHtml = nFilters ? `<span class="filter-count-badge">${nFilters}</span>` : '';
+  const searchBar = !isBooks ? '' : `
+  <div class="lib-searchbar">
+    <input type="search" class="search-input" placeholder="🔍 חיפוש..." style="flex:1"
       value="${esc(S.libSearch)}" oninput="S.libSearch=this.value;renderTabContent()">
-    <select class="sort-select" onchange="S.libSort=this.value;renderTabContent()">${sortOpts}</select>
-    <select class="sort-select" onchange="S.libGroupBy=this.value||null;renderTabContent()">${groupOpts}</select>
     <button class="view-btn ${S.libView==='list'?'active':''}" onclick="S.libView='list';renderLib()" title="רשימה">≡</button>
     <button class="view-btn ${S.libView==='grid'?'active':''}" onclick="S.libView='grid';renderLib()" title="גריד">⊞</button>
-    <button class="view-btn ${S.libSelectMode?'active':''}" onclick="toggleSelectMode()" title="בחר ספרים">☑</button>
-  </div>
-  <div class="lib-filters-row">
-    <span style="font-size:0.78rem;color:var(--muted);white-space:nowrap">סנן:</span>
-    <select class="sort-select" style="font-size:0.82rem" onchange="S.libFormatFilter=this.value||null;renderTabContent()">
-      <option value="" ${!S.libFormatFilter?'selected':''}>כל הפורמטים</option>
-      <option value="pdf"  ${S.libFormatFilter==='pdf' ?'selected':''}>PDF</option>
-      <option value="epub" ${S.libFormatFilter==='epub'?'selected':''}>EPUB</option>
-    </select>
-    ${uniqueLangs.length ? `<select class="sort-select" style="font-size:0.82rem" onchange="S.libLangFilter=this.value||null;renderTabContent()">
-      <option value="" ${!S.libLangFilter?'selected':''}>כל השפות</option>
-      ${langOpts}
-    </select>` : ''}
-    ${anyFilter ? `<button class="btn-secondary" style="font-size:0.75rem;padding:3px 9px" onclick="S.libFormatFilter=null;S.libLangFilter=null;renderTabContent()">✕ נקה</button>` : ''}
+    <button class="view-btn ${S.libSelectMode?'active':''}" onclick="toggleSelectMode()" title="בחר">☑</button>
+    <button class="filter-btn${nFilters?' has-filters':''}" onclick="openFilterPanel()" title="מיון וסינון">⚙️${badgeHtml}</button>
   </div>`;
-
   $id('libPage').innerHTML = `
-  <div class="lib-header-min">
-    <button class="icon-btn" onclick="openNav()" title="תפריט" style="font-size:1.2rem">☰</button>
-    <span class="lib-tab-title">${tabLabels[S.libTab]||''}</span>
-    ${isBooks ? `<button class="icon-btn" onclick="showAddModal()" title="הוסף ספר" style="font-size:1.3rem;font-weight:700;color:var(--accent)">+</button>` : ''}
+  <div class="lib-topbar">
+    <button class="icon-btn" onclick="openNav()" style="font-size:1.2rem;flex-shrink:0">☰</button>
+    <div class="lib-tabs-scroll">${tabs}</div>
+    ${isBooks ? `<button class="topbar-add" onclick="showAddModal()" title="הוסף">＋</button>` : ''}
   </div>
-  ${controlsBar}
+  ${searchBar}
   <div id="libContent" style="flex:1;overflow-y:auto;padding:16px"></div>`;
   renderTabContent(prevScroll);
 }
@@ -794,6 +803,92 @@ function renderLib(scrollTo) {
 function switchTab(tab) {
   S.libTab = tab;
   renderLib(0);
+}
+
+// פותח פאנל מיון, קיבוץ וסינון (slide-up)
+function openFilterPanel() {
+  if ($id('fpOverlay')) return;
+  const sortOpts = [
+    ['date','תאריך הוספה'],['title','שם'],['author','מחבר'],['year','שנה'],
+    ['publisher','הוצאה לאור'],['format','פורמט'],['progress','התקדמות'],
+    ['issueDate','תאריך גיליון'],['volume','כרך / גיליון'],
+  ].map(([v,l])=>`<option value="${v}"${S.libSort===v?' selected':''}>${l}</option>`).join('');
+  const groupOpts = [
+    ['','ללא קיבוץ'],['firstLetter','אות ראשונה'],['author','מחבר'],
+    ['year','שנה'],['genre',"ז'אנר"],['publisher','הוצאה'],['language','שפה'],['type','סוג'],
+  ].map(([v,l])=>`<option value="${v}"${(S.libGroupBy||'')===v?' selected':''}>${l}</option>`).join('');
+  const uniqueLangs = [...new Set(S.books.map(b=>b.language||'').filter(Boolean))].sort();
+  const langOpts = uniqueLangs.map(l=>`<option value="${esc(l)}"${S.libLangFilter===l?' selected':''}>${esc(l)}</option>`).join('');
+  const typeChips = ITEM_TYPES.map(({v,l})=>
+    `<button class="fp-chip${(S.libTypeFilter??null)===v?' active':''}" onclick="S.libTypeFilter=${v===null?'null':`'${v}'`};renderTabContent();_refreshFpState()">${l}</button>`
+  ).join('');
+  const el = document.createElement('div');
+  el.id = 'fpOverlay';
+  el.className = 'fp-overlay';
+  el.innerHTML = `
+    <div class="fp-backdrop" onclick="closeFilterPanel()"></div>
+    <div class="fp-box">
+      <div class="fp-handle"></div>
+      <div class="fp-head"><span>⚙️ מיון, קיבוץ וסינון</span><button class="icon-btn" onclick="closeFilterPanel()">✕</button></div>
+      <div class="fp-body">
+        <div class="fp-sec">
+          <div class="fp-lbl">סוג פריט</div>
+          <div class="fp-chips" id="fpTypeChips">${typeChips}</div>
+        </div>
+        <div class="fp-sec">
+          <div class="fp-lbl">מיון לפי</div>
+          <select class="fp-select" onchange="S.libSort=this.value;renderTabContent()">${sortOpts}</select>
+        </div>
+        <div class="fp-sec">
+          <div class="fp-lbl">קיבוץ לפי</div>
+          <select class="fp-select" onchange="S.libGroupBy=this.value||null;renderTabContent()">${groupOpts}</select>
+        </div>
+        <div class="fp-2col">
+          <div class="fp-sec">
+            <div class="fp-lbl">פורמט</div>
+            <select class="fp-select" onchange="S.libFormatFilter=this.value||null;renderTabContent();_refreshFpState()">
+              <option value=""${!S.libFormatFilter?' selected':''}>הכל</option>
+              <option value="pdf"${S.libFormatFilter==='pdf'?' selected':''}>PDF</option>
+              <option value="epub"${S.libFormatFilter==='epub'?' selected':''}>EPUB</option>
+            </select>
+          </div>
+          <div class="fp-sec">
+            <div class="fp-lbl">שפה</div>
+            <select class="fp-select" onchange="S.libLangFilter=this.value||null;renderTabContent();_refreshFpState()">
+              <option value=""${!S.libLangFilter?' selected':''}>הכל</option>
+              ${langOpts}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="fp-foot">
+        <button class="btn-secondary" onclick="S.libTypeFilter=null;S.libFormatFilter=null;S.libLangFilter=null;S.libGroupBy=null;S.libSearch='';renderLib();closeFilterPanel()">נקה הכל</button>
+        <button class="btn-primary" onclick="closeFilterPanel()">סגור</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('open'));
+}
+
+function closeFilterPanel() {
+  const el = $id('fpOverlay');
+  if (!el) return;
+  el.classList.remove('open');
+  el.addEventListener('transitionend', () => el.remove(), { once: true });
+}
+
+function _refreshFpState() {
+  const chips = $id('fpTypeChips');
+  if (chips) chips.querySelectorAll('.fp-chip').forEach((btn, i) => {
+    btn.classList.toggle('active', (S.libTypeFilter ?? null) === ITEM_TYPES[i].v);
+  });
+  const btn = document.querySelector('.filter-btn');
+  if (!btn) return;
+  const n = [S.libTypeFilter, S.libFormatFilter, S.libLangFilter, S.libGroupBy].filter(Boolean).length;
+  btn.classList.toggle('has-filters', n > 0);
+  let badge = btn.querySelector('.filter-count-badge');
+  if (n && !badge) { badge = document.createElement('span'); badge.className='filter-count-badge'; btn.appendChild(badge); }
+  if (badge) { if (n) badge.textContent = n; else badge.remove(); }
 }
 
 // מרנדר את תוכן הלשונית הפעילה בתוך אזור התוכן
@@ -823,11 +918,7 @@ function fchips(vals, cls) {
 // ═══ NAV DRAWER ═══
 // פותח את תפריט הניווט הצדדי ומציג קישורי לשוניות
 function openNav() {
-  const tabs = [['books','📚 ספרים'],['shelves','🗄 מדפים'],['series','📖 סדרות'],['dictionary','📒 מילון'],['stats','📊 סטטיסטיקות']];
-  $id('navLinks').innerHTML = tabs.map(([t,l]) =>
-    `<button class="nav-item ${S.libTab===t?'active':''}" onclick="switchTab('${t}');closeNav()">${l}</button>`
-  ).join('') + `<div class="nav-divider"></div>
-    <button class="nav-item" onclick="closeNav();showAddModal()">＋ הוסף ספר</button>`;
+  $id('navLinks').innerHTML = `<button class="nav-item" onclick="closeNav();showAddModal()">＋ הוסף ספר</button>`;
   const themes = [['light','☀️'],['sepia','📜'],['dark','🌙']];
   $id('navFooter').innerHTML = `<div class="nav-theme-row">
     ${themes.map(([t,l])=>`<button class="nav-theme-btn ${S.theme===t?'active':''}" onclick="S.theme='${t}';localStorage.setItem('theme','${t}');applyTheme();document.querySelectorAll('.nav-theme-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">${l}</button>`).join('')}
@@ -1013,22 +1104,17 @@ const ITEM_TYPE_LABEL = { book:'ספר', booklet:'חוברת', journal:'כתב �
 
 // מרנדר את לשונית הספרים עם רשימה או גריד של ספרים
 function renderBooksTab() {
-  const typeBar = `<div class="type-filter-bar">${ITEM_TYPES.map(({v,l}) => {
-    const active = (S.libTypeFilter ?? null) === v;
-    const count = v === null ? S.books.length : S.books.filter(b=>(b.itemType||'book')===v).length;
-    return `<button class="type-filter-btn${active?' active':''}" onclick="S.libTypeFilter=${v===null?'null':`'${v}'`};renderTabContent()">${l} <span style="opacity:0.65;font-size:0.75em">(${count})</span></button>`;
-  }).join('')}</div>`;
-
-  const panel = renderInfoPanel();
   const books = getSortedBooks();
-  if (!books.length && !S.books.length) return typeBar + panel + `<div class="empty-state">
+  const hasFilters = S.libTypeFilter || S.libFormatFilter || S.libLangFilter || S.libSearch?.trim() || S.libInfoFilter;
+  const countLine = `<div class="lib-count-bar">${hasFilters ? `מציג ${books.length} מתוך ${S.books.length}` : `${S.books.length} פריטים`}</div>`;
+  if (!books.length && !S.books.length) return `<div class="empty-state">
     <div style="font-size:4rem">📚</div>
     <p>הספרייה ריקה</p>
     <button class="btn-primary" onclick="showAddModal()">הוסף את הספר הראשון</button>
   </div>`;
-  if (!books.length) return typeBar + panel + `<div class="empty-state"><div style="font-size:3rem">🔍</div>
+  if (!books.length) return countLine + `<div class="empty-state"><div style="font-size:3rem">🔍</div>
     <p>אין פריטים התואמים לסינון הנוכחי</p>
-    <button class="btn-secondary" onclick="S.libInfoFilter=null;S.libTypeFilter=null;renderTabContent()">הסר סינון</button></div>`;
+    <button class="btn-secondary" onclick="S.libInfoFilter=null;S.libTypeFilter=null;S.libFormatFilter=null;S.libLangFilter=null;S.libSearch='';renderLib()">הסר סינון</button></div>`;
   let listHtml;
   if (S.libGroupBy) {
     listHtml = renderGroupedBooks(books);
@@ -1037,7 +1123,7 @@ function renderBooksTab() {
   } else {
     listHtml = `<div class="book-list">${books.map(bookListCard).join('')}</div>`;
   }
-  return typeBar + panel + listHtml + renderSelectBar(books);
+  return countLine + listHtml + renderSelectBar(books);
 }
 
 // מחזיר HTML של כריכת ספר או תחליף צבעוני אם אין כריכה
