@@ -597,7 +597,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 const S = {
   books: [], shelves: [], seriesList: [],
   annotations: [], dictionary: [], bookmarks: [],
-  libTab: 'books', libView: 'list', libSort: 'date', libSearch: '',
+  libTab: 'books', libView: 'list', libSort: 'lastRead', libSearch: '',
   libTypeFilter: null, libFormatFilter: null, libLangFilter: null,
   libShelfFilter: null, libSeriesFilter: null, libInfoFilter: null,
   libGroupBy: null, libInfoBreakdownOpen: false,
@@ -812,6 +812,7 @@ function openFilterPanel() {
     ['date','תאריך הוספה'],['title','שם'],['author','מחבר'],['year','שנה'],
     ['publisher','הוצאה לאור'],['format','פורמט'],['progress','התקדמות'],
     ['issueDate','תאריך גיליון'],['volume','כרך / גיליון'],
+    ['lastRead','פתוח לאחרונה'],
   ].map(([v,l])=>`<option value="${v}"${S.libSort===v?' selected':''}>${l}</option>`).join('');
   const groupOpts = [
     ['','ללא קיבוץ'],['firstLetter','אות ראשונה'],['author','מחבר'],
@@ -1016,10 +1017,10 @@ function getSortedBooks() {
     return books;
   }
   // מיון חכם לפי סוג פריט כשמיון ברירת מחדל
-  const effectiveSort = S.libSort !== 'date' ? S.libSort :
+  const effectiveSort = (S.libSort !== 'date' && S.libSort !== 'lastRead') ? S.libSort :
     S.libTypeFilter === 'journal'  ? 'issueDate' :
     S.libTypeFilter === 'article'  ? 'author' :
-    'date';
+    S.libSort;
   books.sort((a,b) => {
     if (effectiveSort==='title')     return (a.title||'').localeCompare(b.title||'','he');
     if (effectiveSort==='author')    return (a.author||'').localeCompare(b.author||'','he');
@@ -1027,6 +1028,7 @@ function getSortedBooks() {
     if (effectiveSort==='publisher') return (a.publisher||b.organization||'').localeCompare(b.publisher||b.organization||'','he');
     if (effectiveSort==='format')    return (a.format||'').localeCompare(b.format||'');
     if (effectiveSort==='progress')  return getProgress(b) - getProgress(a);
+    if (effectiveSort==='lastRead')  return (b.lastRead||0) - (a.lastRead||0);
     if (effectiveSort==='issueDate') return (b.issueDate||'').localeCompare(a.issueDate||'');
     if (effectiveSort==='volume') {
       const vd = (b.volume||0) - (a.volume||0);
@@ -1925,6 +1927,7 @@ async function closeReader() {
   clearTimerInterval();
   if (S._pdfObserver) { S._pdfObserver.disconnect(); S._pdfObserver = null; }
   clearTimeout(S._pdfSaveTimer);
+  if (S.currentBook) await dbPut('books', bookMeta(S.currentBook));
   $id('readerPage').style.display = 'none';
   $id('libPage').style.display = 'flex';
   if (S.currentBook) S.currentBook._fileData = null;
@@ -2915,10 +2918,14 @@ async function initPdf(data) {
 async function renderPdfPage(num) {
   if (!S.pdfDoc) return;
   num = Math.max(1, Math.min(num, S.pdfDoc.numPages));
-  const wrap = $id('readerMain')?.querySelector(`.pdf-page-wrap[data-page="${num}"]`);
-  if (!wrap) return;
+  const rm = $id('readerMain');
+  const wrap = rm?.querySelector(`.pdf-page-wrap[data-page="${num}"]`);
+  if (!wrap || !rm) return;
   if (!wrap.dataset.rendered) await renderPageIntoWrapper(num, wrap);
-  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Use calculated position: 8px top padding + (num-1) * (pageH + 12px gap)
+  rm.scrollTop = 8 + (num - 1) * ((S._pdfPageH || 0) + 12);
+  S.currentPage = num;
+  updatePageDisplay();
 }
 
 // Renders a single page canvas+textLayer into its wrapper div
@@ -2974,6 +2981,8 @@ async function setupPdfContinuous() {
   const pageH = Math.round(baseVP.height * scale);
   const pageW = Math.round(baseVP.width * scale);
 
+  S._pdfPageH = pageH;
+
   const container = $id('pdfPagesContainer');
   container.innerHTML = '';
 
@@ -3004,22 +3013,11 @@ async function setupPdfContinuous() {
   }
 
   // Restore saved position
-  const savedFrac = S.currentBook?.pdfScrollFrac || 0;
   const savedPage = S.currentPage || 1;
-  if (savedFrac > 0) {
-    // Pre-render the page that should be visible at the saved position
+  if (savedPage > 1) {
     const targetWrap = container.querySelector(`[data-page="${savedPage}"]`);
     if (targetWrap) await renderPageIntoWrapper(savedPage, targetWrap);
-    // scrollHeight is computed synchronously after DOM access — restore exact position
-    if (rm && rm.scrollHeight > rm.clientHeight) {
-      rm.scrollTop = Math.round(savedFrac * (rm.scrollHeight - rm.clientHeight));
-    }
-  } else if (savedPage > 1) {
-    const targetWrap = container.querySelector(`[data-page="${savedPage}"]`);
-    if (targetWrap) {
-      await renderPageIntoWrapper(savedPage, targetWrap);
-      targetWrap.scrollIntoView({ block: 'start' });
-    }
+    if (rm) rm.scrollTop = 8 + (savedPage - 1) * (pageH + 12);
   }
   updatePageDisplay();
   setupTextSelect($id('pdfContainer'));
